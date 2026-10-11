@@ -240,15 +240,21 @@ function addScheduleItem(classKey, dayKey, item) {
   if (!schedules[cKey]) schedules[cKey] = {};
   if (!schedules[cKey][dKey]) schedules[cKey][dKey] = [];
 
-  // Jika matkul sudah ada di hari itu, update
-  const existingIdx = schedules[cKey][dKey].findIndex(
-    s => (s.matkul || '').toLowerCase() === (item.matkul || '').toLowerCase()
-  );
-
   if (existingIdx >= 0) {
-    schedules[cKey][dKey][existingIdx] = { ...schedules[cKey][dKey][existingIdx], ...item };
+    const prev = schedules[cKey][dKey][existingIdx];
+    schedules[cKey][dKey][existingIdx] = {
+      jam: (item.jam && item.jam !== '-') ? item.jam : prev.jam,
+      matkul: item.matkul || prev.matkul,
+      dosen: (item.dosen && item.dosen !== '-') ? item.dosen : prev.dosen,
+      ruang: (item.ruang && item.ruang !== '-') ? item.ruang : prev.ruang
+    };
   } else {
-    schedules[cKey][dKey].push(item);
+    schedules[cKey][dKey].push({
+      jam: item.jam || '-',
+      matkul: item.matkul || 'Mata Kuliah',
+      dosen: item.dosen || '-',
+      ruang: item.ruang || '-'
+    });
   }
 
   saveSchedules(schedules);
