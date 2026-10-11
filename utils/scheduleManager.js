@@ -73,8 +73,9 @@ function saveSchedules(schedules) {
 function formatSchedule(classKey, dayKeyOverride = null) {
   const schedules = getSchedules();
   const normalizedClass = (classKey || 'A').toUpperCase();
-  const dt = getIndonesianDateTime();
-  const dayKey = (dayKeyOverride || dt.dayKey).toLowerCase();
+  const dt = getIndonesianDateTime() || {};
+  const rawDay = dayKeyOverride || dt.dayKey || dt.hari || 'senin';
+  const dayKey = String(rawDay).toLowerCase();
 
   const classData = schedules[normalizedClass];
   if (!classData) {
@@ -87,7 +88,7 @@ function formatSchedule(classKey, dayKeyOverride = null) {
 
   let output = `╭───「 📅 *JADWAL KELAS ${normalizedClass}* 」\n`;
   output += `│ 📆 Hari: *${capitalizedDay}*\n`;
-  output += `│ ⏰ Waktu Cek: ${dt.timeFormatted}\n`;
+  output += `│ ⏰ Waktu Cek: ${dt.timeFormatted || dt.formattedTime || '-'}\n`;
   output += `╰──────────────────────────────\n\n`;
 
   if (!dayList || dayList.length === 0) {

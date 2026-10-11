@@ -51,14 +51,19 @@ function getIndonesianDateTime(date = new Date()) {
   const formattedTime = \`\${jam}.\${menit} WIB\`;
 
   return {
+    dayKey: hari.toLowerCase(),
+    dayName: hari,
     hari,
     tanggal,
     bulan,
     tahun,
     jam,
     menit,
+    dateFormatted: \`\${tanggal} \${bulan} \${tahun}\`,
+    timeFormatted: \`\${jam}.\${menit} WIB\`,
     formattedDate,
-    formattedTime
+    formattedTime,
+    fullFormatted: \`\${hari}, \${tanggal} \${bulan} \${tahun} - \${jam}.\${menit} WIB\`
   };
 }
 
