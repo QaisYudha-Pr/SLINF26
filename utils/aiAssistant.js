@@ -21,8 +21,8 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   // Buat ringkasan jadwal untuk konteks
   const scheduleSummary = JSON.stringify(schedules);
 
-  const systemInstruction = 
-`Kamu adalah asisten pintar WhatsApp yang ramah, cerdas, dan siap membantu mahasiswa/pengguna.
+  const systemInstruction =
+    `Kamu adalah asisten pintar WhatsApp yang ramah, cerdas, dan siap membantu mahasiswa/pengguna.
 Gaya respons:
 - Gunakan bahasa Indonesia yang santai, sopan, dan jelas.
 - Format teks KHUSUS WhatsApp: gunakan *tebal* untuk penekanan, _miring_ untuk istilah, dan poin list (•) jika berpoin.
