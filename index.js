@@ -899,7 +899,19 @@ Kirim foto/PDF jadwal dengan caption *${prefix}scanjadwal* (atau balas foto/PDF 
         await reply(`✅ *PEMINDAIAN JADWAL SELESAI!*\n\n🤖 Google Gemini AI berhasil membaca jadwal untuk Kelas: *${classesFoundStr}*.\nData jadwal telah otomatis diperbarui dan disimpan!\n\nSekarang kamu bisa melihat jadwalnya dengan mengetik:\n👉 *${prefix}jadwal a*\n👉 *${prefix}jadwal b*\n👉 *${prefix}jadwal i*`);
       } catch (scanErr) {
         console.error('[Gemini Scan Error]', scanErr);
-        await reply(`❌ Gagal menganalisis jadwal: ${scanErr.message}`);
+        await react('⚠️');
+        await reply(
+`⚠️ *Gagal Memindai Gambar/PDF:* Server AI Vision sedang sibuk atau mengalami antrean.
+
+💡 *Solusi Alternatif Cepat (Langsung Berhasil):*
+1. Buka foto/PDF jadwal di HP kamu, lalu gunakan *Google Lens* (atau fitur salin teks foto di galeri HP).
+2. Salin (copy) teks tabel jadwal tersebut.
+3. Kirim ke bot dengan perintah:
+👉 *${prefix}ai tolong simpan jadwal ini untuk Kelas B:*
+_[tempel/paste teks jadwal kamu di sini]_
+
+🤖 Bot AI akan otomatis merapikan jam, mata kuliah, dosen, dan ruangannya, lalu langsung menyimpannya ke database!`
+        );
       }
       break;
     }
