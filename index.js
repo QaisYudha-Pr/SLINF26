@@ -9,6 +9,7 @@ const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
+const vm = require('vm');
 
 // ============================================================================
 // 🩺 SELF-HEALING BOOTSTRAP:
@@ -125,7 +126,7 @@ module.exports = {
         prefix: '!',
         targetJids: [],
         ownerNumbers: ['6281336721331'],
-        autoSend: { enabled: true, time: '07:00' },
+        autoSend: { enabled: false, cronTime: '0 7 * * *', timezone: 'Asia/Jakarta' },
         defaultLecturers: ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus']
       };
       fs.writeFileSync(configFile, JSON.stringify(defConfig, null, 2), 'utf-8');
@@ -497,7 +498,7 @@ async function handleIncomingMessage(msg) {
     console.log(`🤖 [AI Mention] Ditanyakan oleh ${sender}: "${promptToAsk}"${mediaFile ? ` [Lampiran: ${mediaFile.mimeType}]` : ''}`);
     await react('🤔');
     try {
-      const answer = await askGeminiAI(promptToAsk, userIsOwner, mediaFile);
+      const answer = await askGeminiAI(promptToAsk, userIsOwner, mediaFile, null, sock);
       await reply(answer);
       await react('💡');
     } catch (e) {
@@ -844,7 +845,7 @@ async function handleIncomingMessage(msg) {
 
       await react('🤔');
       try {
-        const answer = await askGeminiAI(questionText, userIsOwner, mediaFile);
+        const answer = await askGeminiAI(questionText, userIsOwner, mediaFile, null, sock);
         await reply(answer);
         await react('💡');
       } catch (err) {
@@ -1315,6 +1316,17 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
             return { fileRelPath, content };
           })
         );
+
+        // 🛡️ ANTI-CRASH VALIDATOR: Uji syntax setiap file JS di RAM sebelum menyentuh disk
+        for (const item of downloads) {
+          if (item.fileRelPath.endsWith('.js')) {
+            try {
+              new vm.Script(item.content);
+            } catch (syntaxErr) {
+              throw new Error(`Validasi syntax gagal pada ${item.fileRelPath}: ${syntaxErr.message}`);
+            }
+          }
+        }
 
         // 3. Cadangkan (backup) file yang ada saat ini sebelum ditimpa
         for (const item of downloads) {

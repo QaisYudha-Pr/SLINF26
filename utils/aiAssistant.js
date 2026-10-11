@@ -1,12 +1,13 @@
 const { getIndonesianDateTime } = require('./formatter');
 const { getSchedules, addScheduleItem, deleteScheduleItem, saveBatchSchedule } = require('./scheduleManager');
-const { loadConfig } = require('../configManager');
+const { loadConfig, saveConfig } = require('../configManager');
+const { startScheduler, stopScheduler } = require('../scheduler');
 
 /**
  * Mengirim pertanyaan ke Google Gemini AI (gemini-3.8-flash)
  * Dilengkapi kemampuan multimodal (membaca PDF & Foto) dan auto-save jadwal kuliah.
  */
-async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null, customApiKey = null) {
+async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null, customApiKey = null, sockInstance = null) {
   const config = loadConfig();
   const apiKey = customApiKey || config.geminiApiKey || process.env.GEMINI_API_KEY;
 
@@ -65,6 +66,12 @@ Setiap kali pengguna menyuruh MENYIMPAN, MENGUBAH, atau MENGHAPUS jadwal kuliah,
 
 3. Menghapus Mata Kuliah:
 [[ACTION:DELETE_SCHEDULE:{"kelas":"A","hari":"senin","matkul":"Pancasila"}]]
+
+4. Mengatur Broadcast/Siaran Otomatis Harian:
+Jika pengguna menyuruh mengaktifkan atau mematikan siaran template harian (default saat ini mati/false):
+[[ACTION:SET_AUTOSEND:{"enabled":true,"time":"07:00"}]]
+atau jika menyuruh mematikan:
+[[ACTION:SET_AUTOSEND:{"enabled":false}]]
 
 Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu).`;
 
@@ -134,8 +141,8 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
 
         replyText = replyText.trim();
 
-        // Periksa apakah AI memicu aksi penyimpanan jadwal
-        const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE):([\s\S]*?)\]\]/);
+        // Periksa apakah AI memicu aksi penyimpanan jadwal atau konfigurasi
+        const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE|SET_AUTOSEND):([\s\S]*?)\]\]/);
         if (actionMatch) {
           const actionType = actionMatch[1];
           const actionPayloadStr = actionMatch[2];
@@ -163,6 +170,22 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
             } else if (actionType === 'DELETE_SCHEDULE') {
               const resDel = deleteScheduleItem(actionData.kelas, actionData.hari, actionData.matkul);
               return `${cleanReply}\n\n🗑️ *[Database Terupdate]* Mata kuliah *${actionData.matkul}* telah dihapus dari jadwal Kelas ${resDel.cKey} hari ${resDel.dKey}.`;
+            } else if (actionType === 'SET_AUTOSEND') {
+              const cfg = loadConfig();
+              if (!cfg.autoSend) cfg.autoSend = { timezone: 'Asia/Jakarta' };
+              cfg.autoSend.enabled = !!actionData.enabled;
+              if (actionData.time && /^\d{1,2}:\d{2}$/.test(actionData.time)) {
+                const [hour, minute] = actionData.time.split(':');
+                cfg.autoSend.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
+              }
+              saveConfig(cfg);
+              if (cfg.autoSend.enabled) {
+                if (sockInstance) startScheduler(sockInstance);
+                return `${cleanReply}\n\n⏰ *[Auto-Send Diaktifkan]* Pengiriman siaran otomatis telah DIAKTIFKAN pada jam ${actionData.time || '07:00'} WIB.`;
+              } else {
+                stopScheduler();
+                return `${cleanReply}\n\n🛑 *[Auto-Send Dimatikan]* Pengiriman siaran otomatis harian telah DINONAKTIFKAN.`;
+              }
             }
           } catch (eAction) {
             console.error('❌ [Action Execution Error]:', eAction.message);
