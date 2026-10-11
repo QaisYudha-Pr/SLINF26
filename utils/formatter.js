@@ -20,12 +20,24 @@ function getIndonesianDateTime(date = new Date()) {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
 
+  const dateFormatted = `${dayNumber} ${monthName} ${year}`;
+  const timeFormatted = `${hours}:${minutes} WIB`;
+  const fullFormatted = `${capitalizedDay}, ${dayNumber} ${monthName} ${year} - ${hours}:${minutes} WIB`;
+
   return {
     dayKey: dayName,
     dayName: capitalizedDay,
-    dateFormatted: `${dayNumber} ${monthName} ${year}`,
-    timeFormatted: `${hours}:${minutes} WIB`,
-    fullFormatted: `${capitalizedDay}, ${dayNumber} ${monthName} ${year} - ${hours}:${minutes} WIB`
+    hari: capitalizedDay,
+    tanggal: dayNumber,
+    bulan: monthName,
+    tahun: year,
+    jam: hours,
+    menit: minutes,
+    dateFormatted,
+    timeFormatted,
+    formattedDate: dateFormatted,
+    formattedTime: timeFormatted,
+    fullFormatted
   };
 }
 

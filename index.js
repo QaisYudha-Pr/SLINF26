@@ -1206,13 +1206,14 @@ Kirim foto/PDF jadwal dengan caption *${prefix}scanjadwal* (atau balas foto/PDF 
     }
 
     case 'status': {
-      const dt = getIndonesianDateTime();
+      const dt = getIndonesianDateTime() || {};
+      const fullTimeStr = dt.fullFormatted || (dt.formattedDate ? `${dt.hari || dt.dayName || ''}, ${dt.formattedDate} - ${dt.formattedTime || ''}` : `${dt.dayName || dt.hari || 'WIB'}, ${dt.dateFormatted || ''} - ${dt.timeFormatted || ''}`);
       const isAuto = config.autoSend && config.autoSend.enabled;
 
       if (userIsOwner) {
         const targetCount = (config.targetJids || []).length;
         const statusText = `📊 *STATUS BOT (OWNER VIEW)*
-⏰ Waktu Sistem: ${dt.fullFormatted}
+⏰ Waktu Sistem: ${fullTimeStr}
 🤖 Status Koneksi: Aktif & Terhubung
 
 ⚙️ *Konfigurasi:*
@@ -1224,7 +1225,7 @@ Kirim foto/PDF jadwal dengan caption *${prefix}scanjadwal* (atau balas foto/PDF 
         await reply(statusText);
       } else {
         const statusText = `📊 *STATUS BOT*
-⏰ Waktu Sistem: ${dt.fullFormatted}
+⏰ Waktu Sistem: ${fullTimeStr}
 🤖 Status Bot: 🟢 Aktif & Siap Digunakan
 Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
 
