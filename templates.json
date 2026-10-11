@@ -1,0 +1,91 @@
+{
+  "senin": {
+    "title": "📋 AGENDA & UPDATE HARIAN - SENIN",
+    "header": "Semangat mengawali pekan baru! Berikut ringkasan agenda dan pengumuman untuk hari ini:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "📌 *Koordinasi Awal Pekan:* Review rencana & target minggu ini",
+      "▫️ *Tugas Prioritas 1:* Follow up pesan & pertanyaan yang tertunda",
+      "▫️ *Tugas Prioritas 2:* Cek update status proyek & deadline berjalan",
+      "▫️ *Pengingat:* Pastikan semua laporan pekan lalu sudah diselesaikan",
+      "💡 *Catatan:* Fokus pada hal yang paling penting sebelum makan siang!"
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Tinggalkan reaksi ❤️ atau 👍 jika sudah membaca!_"
+  },
+  "selasa": {
+    "title": "📋 AGENDA & UPDATE HARIAN - SELASA",
+    "header": "Selamat pagi rekan-rekan! Tetap produktif hari ini:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "▫️ *Fokus Harian:* Eksekusi rencana kerja teknis & operasional",
+      "▫️ *Monitoring:* Pengecekan progres harian & kendala di lapangan",
+      "▫️ *Kolaborasi:* Sinkronisasi antar tim/anggota jika ada kendala",
+      "💡 *Tips:* Selesaikan pekerjaan tersulit di pagi hari saat energi penuh."
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Beri reaksi jika info ini bermanfaat!_"
+  },
+  "rabu": {
+    "title": "📋 AGENDA & UPDATE HARIAN - RABU",
+    "header": "Pertengahan pekan telah tiba! Mari evaluasi progres:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "▫️ *Mid-week Review:* Cek pencapaian target 50% pekan ini",
+      "▫️ *Jadwal Pertemuan:* Review jadwal meeting/diskusi hari ini",
+      "▫️ *Tindak Lanjut:* Selesaikan hal-hal mendesak yang butuh persetujuan",
+      "💡 *Pengingat:* Luangkan 10 menit untuk istirahat dan peregangan mata."
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Tetap semangat menjelang akhir pekan!_"
+  },
+  "kamis": {
+    "title": "📋 AGENDA & UPDATE HARIAN - KAMIS",
+    "header": "Semangat hari Kamis! Menuju penutupan target mingguan:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "▫️ *Finalisasi Tugas:* Percepat pengerjaan tugas yang belum rampung",
+      "▫️ *Pengecekan Kualitas:* QC dan recheck dokumen / pekerjaan",
+      "▫️ *Persiapan Besok:* Siapkan draft laporan penutupan pekan",
+      "💡 *Catatan:* Jangan menumpuk beban kerja untuk hari Jumat."
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Beri reaksi 👍 untuk konfirmasi kehadiran!_"
+  },
+  "jumat": {
+    "title": "📋 AGENDA & UPDATE HARIAN - JUMAT",
+    "header": "Selamat hari Jumat! Saatnya rekapitulasi pekan ini:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "▫️ *Closing & Rekap:* Submit laporan mingguan sebelum sore",
+      "▫️ *Arsip Dokumen:* Simpan & rapikan file kerja pekan ini",
+      "▫️ *Persiapan Akhir Pekan:* Pastikan tidak ada isu mendesak tertinggal",
+      "💡 *Quote:* 'Akhir pekan yang tenang lahir dari pekerjaan Jumat yang tuntas.'"
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Selamat menyambut akhir pekan bagi rekan-rekan sekalian!_"
+  },
+  "sabtu": {
+    "title": "🌟 UPDATE AKHIR PEKAN - SABTU",
+    "header": "Selamat berakhir pekan! Informasi santai & persiapan:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "▫️ *Agenda Santai:* Waktu berkualitas bersama keluarga & istirahat",
+      "▫️ *Emergency Line:* Saluran bantuan darurat tetap aktif via admin",
+      "▫️ *Pengumuman:* Layanan reguler kembali aktif hari Senin",
+      "💡 *Tips:* Rehat sejenak dari layar gadget untuk memulihkan energi."
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Selamat beristirahat dan menikmati hari libur!_"
+  },
+  "minggu": {
+    "title": "🌟 PERSIAPAN PEKAN BARU - MINGGU",
+    "header": "Selamat hari Minggu! Bersiap untuk pekan yang produktif:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "▫️ *Self-Care:* Maksimalkan istirahat sebelum kembali beraktivitas",
+      "▫️ *Quick Plan:* Catat 3 prioritas utama untuk hari Senin besok",
+      "▫️ *Persiapan:* Cek jadwal dan perlengkapan esok hari",
+      "💡 *Kata Motivasi:* 'Setiap pekan baru membawa peluang dan berkah baru.'"
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Sampai jumpa di update hari Senin besok!_"
+  },
+  "default": {
+    "title": "📋 INFORMASI & UPDATE LIST HARIAN",
+    "header": "Berikut adalah ringkasan informasi harian:\n📅 Tanggal: {tanggal}\n⏰ Waktu Rilis: {jam}",
+    "items": [
+      "▫️ *Item 1:* Informasi atau pengumuman pertama",
+      "▫️ *Item 2:* Informasi atau pengumuman kedua",
+      "▫️ *Item 3:* Informasi atau pengumuman ketiga",
+      "▫️ *Item 4:* Catatan tambahan / reminder penting"
+    ],
+    "footer": "━━━━━━━━━━━━━━━━━━━\n📢 Saluran Informasi Resmi\n_Silakan simpan atau forward pesan ini jika diperlukan._"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+session_auth/
+config.json
+.env
+.restart_notice.json
+.DS_Store
+*.log

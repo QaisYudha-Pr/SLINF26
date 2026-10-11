@@ -1,0 +1,81 @@
+{
+  "A": {
+    "senin": [
+      {
+        "jam": "07:50 - 10:20",
+        "matkul": "Deutsch Fuer Anfaenger (A1)",
+        "dosen": "-",
+        "ruang": "T1.03.04"
+      },
+      {
+        "jam": "10:20 - 12:00",
+        "matkul": "Pancasila",
+        "dosen": "-",
+        "ruang": "PC094 (Virtual)"
+      },
+      {
+        "jam": "13:00 - 14:40",
+        "matkul": "Phonetik UND Phonologie",
+        "dosen": "-",
+        "ruang": "T1.03.06"
+      },
+      {
+        "jam": "14:40 - 16:20",
+        "matkul": "Interkulturelle Kompetenz",
+        "dosen": "-",
+        "ruang": "T1.03.05"
+      }
+    ],
+    "selasa": [
+      {
+        "jam": "10:20 - 12:00",
+        "matkul": "Literaturwerke Fuer Anfaenger",
+        "dosen": "-",
+        "ruang": "T1.03.04"
+      },
+      {
+        "jam": "14:40 - 16:20",
+        "matkul": "Grammatik UND Wortschatz IN DER Kommunikation (A1)",
+        "dosen": "-",
+        "ruang": "T14.01.19"
+      }
+    ],
+    "rabu": [
+      {
+        "jam": "10:20 - 13:50",
+        "matkul": "Deutsch Fuer Anfaenger (A1)",
+        "dosen": "-",
+        "ruang": "T14.01.19"
+      }
+    ],
+    "kamis": [
+      {
+        "jam": "10:20 - 12:00",
+        "matkul": "Statistik",
+        "dosen": "-",
+        "ruang": "T1.02.01 (LAB KOM)"
+      },
+      {
+        "jam": "16:20 - 17:30",
+        "matkul": "Literasi Digital",
+        "dosen": "-",
+        "ruang": "LD081 (Virtual)"
+      }
+    ],
+    "jumat": []
+  },
+  "B": {
+    "senin": [],
+    "selasa": [],
+    "rabu": [],
+    "kamis": [],
+    "jumat": []
+  },
+  "I": {
+    "senin": [],
+    "selasa": [],
+    "rabu": [],
+    "kamis": [],
+    "jumat": []
+  }
+}

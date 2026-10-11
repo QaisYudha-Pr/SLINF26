@@ -1,0 +1,19 @@
+{
+  "prefix": "!",
+  "ownerNumbers": [
+    "YOUR_PHONE_NUMBER_HERE"
+  ],
+  "targetJids": [],
+  "autoSend": {
+    "enabled": false,
+    "cronTime": "0 7 * * *",
+    "timezone": "Asia/Jakarta"
+  },
+  "defaultLecturers": [
+    "Frau Woro",
+    "Frau Wisma",
+    "Frau Lita",
+    "Herr Agus"
+  ],
+  "geminiApiKey": "YOUR_GEMINI_API_KEY_HERE"
+}
