@@ -283,8 +283,9 @@ async function startBot() {
 
           if (noticeData.targetJid) {
             const dt = getIndonesianDateTime();
+            const textToSend = noticeData.customMessage || `✅ *[RESTART SELESAI]*\nBot berhasil di-restart dan sekarang siap digunakan kembali! 🚀\n⏰ Waktu Aktif: ${dt.timeFormatted}`;
             await sock.sendMessage(noticeData.targetJid, {
-              text: `✅ *[RESTART SELESAI]*\nBot berhasil di-restart dan sekarang siap digunakan kembali! 🚀\n⏰ Waktu Aktif: ${dt.timeFormatted}`
+              text: textToSend
             });
             console.log(`📢 [Restart Notice] Konfirmasi restart terkirim ke: ${noticeData.targetJid}`);
           }
@@ -516,7 +517,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart'];
+  const commonCommands = ['menu', 'help', 'all', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -575,7 +576,7 @@ async function handleIncomingMessage(msg) {
   // bot DIAM TOTAL (tidak merespons apa-apa) agar mereka mengira perintah tersebut tidak ada!
   const ownerOnlyCommands = [
     'targets', 'addtarget', 'addlink', 'deltarget',
-    'send', 'sendto', 'kirim', 'autosend', 'restart',
+    'send', 'sendto', 'kirim', 'autosend', 'restart', 'update',
     'setdosen', 'additem', 'delitem',
     'tambahkan', 'addowner', 'hapusnomor', 'delowner', 'listowner',
     'repair'
@@ -633,6 +634,7 @@ async function handleIncomingMessage(msg) {
 • *${prefix}tambahkan <no>* ➔ Daftarkan nomor admin baru
 • *${prefix}hapusnomor <no>* ➔ Hapus nomor admin
 • *${prefix}repair* ➔ Cek kesehatan & self-heal file
+• *${prefix}update* ➔ Update otomatis bot dari GitHub
 • *${prefix}restart* ➔ Me-restart proses bot`;
       }
 
@@ -1271,6 +1273,94 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
 
 ✨ Seluruh modul dan struktur file bot dalam kondisi prima!`;
       await reply(report);
+      break;
+    }
+
+    case 'update': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Pemilik (Owner) bot.');
+        return;
+      }
+
+      await react('⏳');
+      await reply('⏳ *Sedang memeriksa dan mengunduh pembaruan dari GitHub...*\nMohon tunggu sekitar 3-5 detik...');
+
+      const repoRawUrl = 'https://raw.githubusercontent.com/QaisYudha-Pr/SLINF26/main/';
+      const filesToUpdate = [
+        'index.js',
+        'runner.js',
+        'scheduler.js',
+        'configManager.js',
+        'utils/aiAssistant.js',
+        'utils/scheduleManager.js',
+        'utils/formatter.js'
+      ];
+
+      try {
+        // 1. Buat folder backup lokal jika belum ada
+        const backupDir = path.join(__dirname, 'backup');
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+        // 2. Download file-file secara paralel via native fetch (cepat & hemat RAM)
+        const downloads = await Promise.all(
+          filesToUpdate.map(async (fileRelPath) => {
+            const res = await fetch(`${repoRawUrl}${fileRelPath}?t=${Date.now()}`, {
+              signal: AbortSignal.timeout(12000)
+            });
+            if (!res.ok) throw new Error(`Gagal mengunduh ${fileRelPath} (HTTP ${res.status})`);
+            const content = await res.text();
+            if (!content || content.length < 50) {
+              throw new Error(`File ${fileRelPath} kosong atau tidak valid.`);
+            }
+            return { fileRelPath, content };
+          })
+        );
+
+        // 3. Cadangkan (backup) file yang ada saat ini sebelum ditimpa
+        for (const item of downloads) {
+          const targetPath = path.join(__dirname, item.fileRelPath);
+          const backupPath = path.join(backupDir, path.basename(item.fileRelPath));
+          if (fs.existsSync(targetPath)) {
+            fs.copyFileSync(targetPath, backupPath);
+          }
+        }
+
+        // Backup database jadwal juga untuk keamanan ekstra
+        const schedPath = path.join(__dirname, 'schedules.json');
+        if (fs.existsSync(schedPath)) {
+          fs.copyFileSync(schedPath, path.join(backupDir, 'schedules_backup.json'));
+        }
+
+        // 4. Tulis file-file baru ke disk
+        for (const item of downloads) {
+          const targetPath = path.join(__dirname, item.fileRelPath);
+          const targetDir = path.dirname(targetPath);
+          if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+          fs.writeFileSync(targetPath, item.content, 'utf-8');
+        }
+
+        // 5. Simpan catatan notifikasi agar saat bot menyala lagi langsung kirim konfirmasi ke WA
+        try {
+          const noticeFile = path.join(__dirname, '.restart_notice.json');
+          fs.writeFileSync(noticeFile, JSON.stringify({
+            targetJid: remoteJid,
+            requestedBy: sender,
+            timestamp: Date.now(),
+            customMessage: '🚀 *[UPDATE SELESAI]*\nSeluruh file bot telah berhasil diperbarui ke versi terbaru dari GitHub! Bot siap digunakan kembali.'
+          }, null, 2), 'utf-8');
+        } catch (e) {}
+
+        await react('✅');
+        await reply('✅ *PEMBARUAN BERHASIL!*\n\nSemua file kode inti telah disinkronkan ke versi terbaru dari GitHub.\nBot akan me-restart secara otomatis dalam 2 detik agar kode baru aktif...');
+
+        setTimeout(() => {
+          process.exit(0);
+        }, 1500);
+      } catch (updateErr) {
+        console.error('❌ [Self-Update Error]:', updateErr.message);
+        await react('❌');
+        await reply(`❌ *Gagal Melakukan Update:* ${updateErr.message}\n\nData bot dan konfigurasi kamu tetap aman.`);
+      }
       break;
     }
 
