@@ -316,6 +316,27 @@ async function startBot() {
       // Jalankan cron scheduler jika diaktifkan
       startScheduler(sock);
 
+      // Langganan Live Updates untuk semua Saluran WhatsApp terdaftar agar respons instan
+      const cfg = loadConfig();
+      const subscribedNewsletters = new Set();
+      const syncNewsletterSubs = async () => {
+        if (!sock.subscribeNewsletterUpdates) return;
+        for (const jid of (cfg.targetJids || [])) {
+          if (jid.endsWith('@newsletter') && !subscribedNewsletters.has(jid)) {
+            try {
+              await sock.subscribeNewsletterUpdates(jid);
+              subscribedNewsletters.add(jid);
+              console.log(`📡 [Real-time Saluran] Berhasil berlangganan live updates untuk: ${jid}`);
+            } catch (eSub) {
+              console.warn(`⚠️ [Saluran Sub Warning]:`, eSub.message);
+            }
+          }
+        }
+      };
+      await syncNewsletterSubs();
+      // Perbarui langganan setiap 15 menit agar selalu terhubung di server WhatsApp
+      setInterval(syncNewsletterSubs, 15 * 60 * 1000);
+
       // Cek apakah baru saja di-restart (ada file .restart_notice.json)
       const noticeFile = path.join(__dirname, '.restart_notice.json');
       if (fs.existsSync(noticeFile)) {
@@ -357,9 +378,13 @@ async function startBot() {
 
   // Event pesan masuk (Command Handler)
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
-
     for (const msg of messages) {
+      // Abaikan pesan riwayat lama (lebih dari 60 detik) saat sinkronisasi / type === 'append'
+      const msgTimestamp = msg.messageTimestamp ? (Number(msg.messageTimestamp) * 1000) : Date.now();
+      if (type === 'append' && (Date.now() - msgTimestamp > 60000)) {
+        continue;
+      }
+
       try {
         await handleIncomingMessage(msg);
       } catch (err) {
@@ -508,15 +533,23 @@ async function handleIncomingMessage(msg) {
   };
 
   const isPrivateChat = remoteJid.endsWith('@s.whatsapp.net');
-  const userIsOwner = isOwner(sender, fromMe, config);
+  const isChannelMessage = remoteJid.endsWith('@newsletter');
+
+  // Auto-subscribe jika ada pesan masuk dari saluran
+  if (isChannelMessage && sock?.subscribeNewsletterUpdates) {
+    sock.subscribeNewsletterUpdates(remoteJid).catch(() => {});
+  }
+
+  // Pesan di saluran hanya bisa ditulis oleh Admin/Owner saluran tersebut
+  const userIsOwner = isOwner(sender, fromMe, config) || isChannelMessage;
 
   // 2. Tandai pesan sudah dibaca (Read Receipt)
-  if (!remoteJid.endsWith('@newsletter')) {
+  if (!isChannelMessage) {
     sock.readMessages([msg.key]).catch(() => {});
   }
 
-  // 3. Cooldown Anti-Flood (Jeda 2 detik per pengguna untuk non-owner agar nomor aman dari spam)
-  if (!userIsOwner && sender) {
+  // 3. Cooldown Anti-Flood (Jeda 2 detik per pengguna untuk non-owner dan non-saluran)
+  if (!userIsOwner && sender && !isChannelMessage) {
     const lastTime = userCooldownMap.get(sender) || 0;
     const now = Date.now();
     if (now - lastTime < 2000) {
@@ -946,7 +979,14 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
             await sendNativePoll(sock, destJid, pollTitle, pollOptions, 0);
             console.log(`📊 [Poll All-in-One Sent] ke ${destJid}`);
           } catch (err) {
-            console.error(`[Poll All-in-One Error] ke ${destJid}:`, err.message);
+            console.warn(`[Poll All-in-One Retry Single]:`, err.message);
+            try {
+              await sendNativePoll(sock, destJid, pollTitle, pollOptions, 1);
+              console.log(`📊 [Poll All-in-One Single Sent] ke ${destJid}`);
+            } catch (e2) {
+              console.error(`[Poll All-in-One Error] ke ${destJid}:`, e2.message);
+              await reply(`❌ Gagal mengirim polling ke obrolan ini: ${e2.message}`);
+            }
           }
         } else {
           // Mode Split: Kirim polling per masing-masing dosen
