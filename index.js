@@ -263,6 +263,9 @@ async function startBot() {
     generateHighQualityLinkPreview: false, // Hemat RAM dan bandwidth
     syncFullHistory: false, // JANGAN download riwayat chat lama bertahun-tahun (bot jadi sangat ringan!)
     markOnlineOnConnect: false, // Tidak broadcast status online tanpa henti
+    getMessage: async (key) => {
+      return { conversation: 'bot-message' };
+    },
     shouldIgnoreJid: (jid) => {
       // Abaikan update status WA kontak agar tidak memakan RAM & CPU komputer
       return jid?.endsWith('@broadcast') || jid === 'status@broadcast';
@@ -600,7 +603,9 @@ async function handleIncomingMessage(msg) {
   const query = cleanCommandText.slice(command.length).trim();
 
   // Toleransi typo / alias otomatis
-  if (command === 'pollall' || ((command === 'poll' || command === 'polling' || command === 'dosen') && (args[1] || '').toLowerCase() === 'all' && !query.includes('|') && args.length === 2)) {
+  if (command === 'list' && (args[1] || '').toLowerCase() === 'dosen') {
+    command = 'listdosen';
+  } else if (command === 'pollall' || ((command === 'poll' || command === 'polling' || command === 'dosen') && (args[1] || '').toLowerCase() === 'all' && !query.includes('|') && args.length === 2)) {
     command = 'all';
   } else if (command === 'jadwala') {
     command = 'jadwal';
@@ -711,7 +716,9 @@ async function handleIncomingMessage(msg) {
 
       if (!query) {
         // Ambil default dari config jika tidak ada argumen nama
-        lecturers = config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
+        lecturers = (Array.isArray(config.defaultLecturers) && config.defaultLecturers.length > 0)
+          ? config.defaultLecturers
+          : ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
       } else {
         // Parse nama-nama dosen dari argumen
         if (query.includes(',')) {
@@ -736,10 +743,11 @@ async function handleIncomingMessage(msg) {
       await sock.sendMessage(remoteJid, { text: introText }, { quoted: msg });
       console.log(`📊 [Poll All] Membuat ${lecturers.length} polling untuk: ${lecturers.join(', ')}`);
 
+      let failCount = 0;
       for (let i = 0; i < lecturers.length; i++) {
         const lecturer = lecturers[i];
-        // Jeda waktu 600ms agar urutan polling rapi dan aman dari rate limit WhatsApp
-        await new Promise(resolve => setTimeout(resolve, 600));
+        // Jeda waktu 800ms agar urutan polling rapi dan aman dari rate limit WhatsApp
+        await new Promise(resolve => setTimeout(resolve, 800));
 
         try {
           await sock.sendMessage(remoteJid, {
@@ -754,18 +762,21 @@ async function handleIncomingMessage(msg) {
             }
           });
         } catch (err) {
+          failCount++;
           console.error(`[Poll All Error] Gagal kirim polling untuk ${lecturer}:`, err.message);
         }
+      }
+
+      if (failCount > 0) {
+        await reply(`⚠️ Catatan: ${failCount} polling tidak dapat ditampilkan oleh server WhatsApp di obrolan ini. Polling WhatsApp paling optimal dijalankan di dalam Grup WhatsApp.`);
       }
       break;
     }
 
     case 'listdosen': {
-      const list = config.defaultLecturers || [];
-      if (list.length === 0) {
-        await reply(`📋 Daftar dosen default masih kosong. Atur dengan:\n*${prefix}setdosen Frau Woro, Frau Wisma, Frau Lita, Herr Agus*`);
-        return;
-      }
+      const list = (Array.isArray(config.defaultLecturers) && config.defaultLecturers.length > 0)
+        ? config.defaultLecturers
+        : ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
       const textList = list.map((d, idx) => `▫️ ${idx + 1}. *${d}*`).join('\n');
       await reply(`🎓 *DAFTAR DOSEN DEFAULT:*\n\n${textList}\n\n_Ketik *${prefix}all* untuk langsung membuat polling untuk semua dosen di atas._`);
       break;
@@ -1245,10 +1256,19 @@ _[tempel/paste teks jadwal kamu di sini]_
     }
 
     case 'list': {
+      if ((args[1] || '').toLowerCase() === 'dosen') {
+        const list = (Array.isArray(config.defaultLecturers) && config.defaultLecturers.length > 0)
+          ? config.defaultLecturers
+          : ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
+        const textList = list.map((d, idx) => `▫️ ${idx + 1}. *${d}*`).join('\n');
+        await reply(`🎓 *DAFTAR DOSEN DEFAULT:*\n\n${textList}\n\n_Ketik *${prefix}all* untuk langsung membuat polling untuk semua dosen di atas._`);
+        break;
+      }
+
       const templates = getTemplates();
       const keys = Object.keys(templates);
       const listStr = keys.map((k, i) => `${i + 1}. *${k}* - ${templates[k].title || 'Tanpa Judul'}`).join('\n');
-      await reply(`📚 *DAFTAR TEMPLATE YANG TERSEDIA:*\n\n${listStr}\n\nGunakan *${prefix}preview <nama>* untuk melihat isi template.`);
+      await reply(`📚 *DAFTAR TEMPLATE YANG TERSEDIA:*\n\n${listStr || '(Belum ada template)'}\n\nGunakan *${prefix}preview <nama>* untuk melihat isi template.`);
       break;
     }
 
