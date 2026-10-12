@@ -15,5 +15,9 @@
     "Frau Lita",
     "Herr Agus"
   ],
-  "geminiApiKey": "YOUR_GEMINI_API_KEY_HERE"
+  "geminiApiKey": "YOUR_GEMINI_API_KEY_HERE",
+  "supabase": {
+    "url": "https://YOUR_PROJECT_ID.supabase.co",
+    "anonKey": "YOUR_SUPABASE_ANON_KEY"
+  }
 }

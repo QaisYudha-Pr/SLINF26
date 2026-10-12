@@ -156,6 +156,13 @@ const {
   scanScheduleWithGemini,
   getSchedules
 } = require('./utils/scheduleManager');
+const {
+  formatTaskList,
+  addTask,
+  markTaskDone,
+  deleteTask,
+  getTasks
+} = require('./utils/taskManager');
 const { askGeminiAI } = require('./utils/aiAssistant');
 const {
   sendDailyBroadcast,
@@ -518,7 +525,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update'];
+  const commonCommands = ['menu', 'help', 'all', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -612,6 +619,13 @@ async function handleIncomingMessage(msg) {
 • *${prefix}jadwal i* ➔ Jadwal Kelas I hari ini
 • *${prefix}jadwal <kelas> <hari>* ➔ Cek hari (cth: ${prefix}jadwal a senin)
 • *${prefix}scanjadwal* ➔ Kirim/balas foto jadwal untuk auto-scan AI
+
+📝 *TRACKER TUGAS (SUPABASE CLOUD)*
+• *${prefix}tugas* ➔ Lihat daftar tugas aktif
+• *${prefix}tugas a* / *${prefix}tugas b* ➔ Cek tugas per kelas
+• *${prefix}tugas tambah <matkul> | <judul> | <deadline>* ➔ Catat tugas
+• *${prefix}tugas done <ID>* ➔ Tandai tugas selesai
+• *${prefix}tugas hapus <ID>* ➔ Hapus tugas
 
 📅 *SIARAN & INFORMASI*
 • *${prefix}today* ➔ Pratinjau list hari ini
@@ -916,6 +930,82 @@ _[tempel/paste teks jadwal kamu di sini]_
 🤖 Bot AI akan otomatis merapikan jam, mata kuliah, dosen, dan ruangannya, lalu langsung menyimpannya ke database!`
         );
       }
+      break;
+    }
+
+    case 'tugas':
+    case 'task': {
+      const subCommand = (args[1] || '').toLowerCase();
+
+      // 1. !tugas tambah <matkul> | <judul> | <deadline>
+      if (subCommand === 'tambah' || subCommand === 'add') {
+        const payloadStr = query.slice(subCommand.length).trim();
+        const parts = payloadStr.split('|').map(s => s.trim());
+        if (parts.length < 2) {
+          await reply(`❌ Format salah. Gunakan:\n*${prefix}tugas tambah <matkul> | <judul tugas> | <deadline>*\n\nContoh:\n*${prefix}tugas tambah Basis Data | Bikin ERD Toko | Jumat jam 23:59*`);
+          return;
+        }
+
+        const matkul = parts[0];
+        const judul = parts[1];
+        const deadline_text = parts[2] || '-';
+
+        await react('⏳');
+        const res = await addTask({ kelas: 'A', matkul, judul, deadline_text, created_by: sender });
+        await react('✅');
+        await reply(`✅ *TUGAS BERHASIL DICATAT!*\n\n▫️ *ID:* ${res.task.id}\n▫️ *Matkul:* ${res.task.matkul}\n📋 *Tugas:* ${res.task.judul}\n⏰ *Batas:* ${res.task.deadline_text}\n\nData tersimpan aman di cloud Supabase 🟢`);
+        return;
+      }
+
+      // 2. !tugas done <id> / !tugas selesai <id>
+      if (subCommand === 'done' || subCommand === 'selesai') {
+        const taskId = args[2];
+        if (!taskId) {
+          await reply(`❌ Masukkan ID tugas. Contoh: *${prefix}tugas done 1*`);
+          return;
+        }
+        await react('⏳');
+        const res = await markTaskDone(taskId);
+        if (res.success) {
+          await react('🎉');
+          await reply(`🎉 *SELAMAT!* Tugas ID *${taskId}* (*${res.task?.judul || 'Tugas'}*) telah ditandai *SELESAI*!`);
+        } else {
+          await reply(`❌ ${res.message || 'Gagal menandai tugas.'}`);
+        }
+        return;
+      }
+
+      // 3. !tugas hapus <id> / !tugas del <id>
+      if (subCommand === 'hapus' || subCommand === 'del' || subCommand === 'delete') {
+        if (!userIsOwner) {
+          await reply('⛔ Hanya Admin / Owner yang dapat menghapus data tugas.');
+          return;
+        }
+        const taskId = args[2];
+        if (!taskId) {
+          await reply(`❌ Masukkan ID tugas. Contoh: *${prefix}tugas hapus 1*`);
+          return;
+        }
+        await react('⏳');
+        const res = await deleteTask(taskId);
+        if (res.success) {
+          await react('🗑️');
+          await reply(`🗑️ Tugas ID *${taskId}* berhasil dihapus dari database.`);
+        } else {
+          await reply('❌ Gagal menghapus tugas.');
+        }
+        return;
+      }
+
+      // 4. Tampilkan daftar tugas (!tugas atau !tugas a atau !tugas b)
+      let targetClass = 'A';
+      if (['a', 'b', 'i'].includes(subCommand)) {
+        targetClass = subCommand.toUpperCase();
+      }
+
+      await react('📝');
+      const taskListText = await formatTaskList(targetClass);
+      await reply(taskListText);
       break;
     }
 
@@ -1294,7 +1384,8 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
         'configManager.js',
         'utils/aiAssistant.js',
         'utils/scheduleManager.js',
-        'utils/formatter.js'
+        'utils/formatter.js',
+        'utils/taskManager.js'
       ];
 
       try {

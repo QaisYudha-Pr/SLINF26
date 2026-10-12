@@ -1,5 +1,6 @@
 const { getIndonesianDateTime } = require('./formatter');
 const { getSchedules, addScheduleItem, deleteScheduleItem, saveBatchSchedule } = require('./scheduleManager');
+const { addTask, markTaskDone, deleteTask, getTasks } = require('./taskManager');
 const { loadConfig, saveConfig } = require('../configManager');
 const { startScheduler, stopScheduler } = require('../scheduler');
 
@@ -19,8 +20,10 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   const schedules = getSchedules();
   const defaultLecturers = config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
 
-  // Buat ringkasan jadwal untuk konteks
+  // Buat ringkasan jadwal dan tugas untuk konteks
   const scheduleSummary = JSON.stringify(schedules);
+  const pendingTasks = await getTasks('A', 'pending').catch(() => []);
+  const tasksSummary = JSON.stringify(pendingTasks);
 
   const DAYS_ORDER = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
   const todayKey = (dt.dayKey || dt.hari || 'senin').toLowerCase();
@@ -72,6 +75,15 @@ Jika pengguna menyuruh mengaktifkan atau mematikan siaran template harian (defau
 [[ACTION:SET_AUTOSEND:{"enabled":true,"time":"07:00"}]]
 atau jika menyuruh mematikan:
 [[ACTION:SET_AUTOSEND:{"enabled":false}]]
+
+5. Mengatur Tracker Tugas Kuliah (Supabase Cloud Database):
+- Data Tugas Aktif Saat Ini: ${tasksSummary}
+- Jika pengguna menyuruh mencatat tugas baru (contoh: "catat tugas basdat bikin ERD deadline jumat jam 23.59"):
+[[ACTION:ADD_TASK:{"kelas":"A","matkul":"Basis Data","judul":"Bikin ERD","deadline":"Jumat jam 23:59"}]]
+- Jika pengguna menyuruh menandai tugas selesai (contoh: "tugas ID 2 udah kelar"):
+[[ACTION:DONE_TASK:{"id":2}]]
+- Jika pengguna menyuruh menghapus tugas:
+[[ACTION:DELETE_TASK:{"id":2}]]
 
 Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu).`;
 
@@ -141,8 +153,8 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
 
         replyText = replyText.trim();
 
-        // Periksa apakah AI memicu aksi penyimpanan jadwal atau konfigurasi
-        const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE|SET_AUTOSEND):([\s\S]*?)\]\]/);
+        // Periksa apakah AI memicu aksi penyimpanan jadwal, tugas, atau konfigurasi
+        const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE|SET_AUTOSEND|ADD_TASK|DONE_TASK|DELETE_TASK):([\s\S]*?)\]\]/);
         if (actionMatch) {
           const actionType = actionMatch[1];
           const actionPayloadStr = actionMatch[2];
@@ -186,6 +198,24 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 stopScheduler();
                 return `${cleanReply}\n\n🛑 *[Auto-Send Dimatikan]* Pengiriman siaran otomatis harian telah DINONAKTIFKAN.`;
               }
+            } else if (actionType === 'ADD_TASK') {
+              const resTask = await addTask({
+                kelas: actionData.kelas || 'A',
+                matkul: actionData.matkul || 'Mata Kuliah',
+                judul: actionData.judul || 'Tugas Baru',
+                deadline_text: actionData.deadline || '-'
+              });
+              return `${cleanReply}\n\n📝 *[Tugas Tersimpan di Cloud Supabase]*\n▫️ *ID:* ${resTask.task.id}\n▫️ *Matkul:* ${resTask.task.matkul}\n📋 *Tugas:* ${resTask.task.judul}\n⏰ *Batas:* ${resTask.task.deadline_text}`;
+            } else if (actionType === 'DONE_TASK') {
+              const resDone = await markTaskDone(actionData.id);
+              if (resDone.success) {
+                return `${cleanReply}\n\n🎉 *[Tugas Selesai]* Tugas ID *${actionData.id}* telah ditandai SELESAI di Supabase!`;
+              } else {
+                return `${cleanReply}\n\n⚠️ ${resDone.message || 'Gagal menandai tugas.'}`;
+              }
+            } else if (actionType === 'DELETE_TASK') {
+              await deleteTask(actionData.id);
+              return `${cleanReply}\n\n🗑️ *[Tugas Dihapus]* Tugas ID *${actionData.id}* telah dihapus dari database Supabase.`;
             }
           } catch (eAction) {
             console.error('❌ [Action Execution Error]:', eAction.message);
