@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadConfig } = require('../configManager');
+const { loadConfig, saveConfig } = require('../configManager');
 
 const TASKS_CACHE_FILE = path.join(__dirname, '..', 'tasks.json');
 let tasksCache = null;
@@ -37,8 +37,17 @@ function saveLocalTasks(tasks) {
  */
 async function fetchSupabase(endpoint, options = {}) {
   const config = loadConfig();
-  const sb = config.supabase;
-  if (!sb || !sb.url || !sb.anonKey) return null;
+  let sb = config.supabase;
+  if (!sb || !sb.url || !sb.anonKey) {
+    sb = {
+      url: 'https://kopdtjpjlhncngzrtflz.supabase.co',
+      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvcGR0anBqbGhuY25nenJ0Zmx6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3NDg5NjcsImV4cCI6MjEwNzMyNDk2N30.trrAhx23Sa6arVZ_nquUB0jYNXcUxumvxckVyw8WAGI'
+    };
+    try {
+      config.supabase = sb;
+      saveConfig(config);
+    } catch (e) {}
+  }
 
   const url = `${sb.url}/rest/v1/${endpoint}`;
   const headers = {
