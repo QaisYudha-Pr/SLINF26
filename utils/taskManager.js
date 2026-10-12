@@ -87,6 +87,26 @@ async function getTasks(classKey = 'A', status = 'pending') {
   // Fallback lokal jika offline
   const local = getLocalTasks();
   return local.filter(t => (t.kelas || 'A').toUpperCase() === cKey && t.status === status);
+} 
+
+/**
+ * Fetch lecturer list from Supabase. Fallback to config defaultLecturers.
+ */
+async function getLecturers() {
+  const config = loadConfig();
+  const fallback = config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
+  try {
+    const res = await fetchSupabase('lecturers');
+    if (res && res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return data.map(l => l.name || l.nama || l.dosen).filter(Boolean);
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Supabase Lecturers Error]:', err.message);
+  }
+  return fallback;
 }
 
 /**
@@ -268,6 +288,7 @@ module.exports = {
   deleteTask,
   formatTaskList,
   checkDatabaseStatus,
-  fetchSupabase
+  fetchSupabase,
+  getLecturers
 };
 

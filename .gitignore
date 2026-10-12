@@ -8,3 +8,5 @@ config.json
 PWSupabase.md
 backup/
 tasks.json
+memory_sessions.json
+memory_facts.json

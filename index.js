@@ -136,6 +136,22 @@ module.exports = {
     if (!fs.existsSync(schedFile)) {
       fs.writeFileSync(schedFile, JSON.stringify({ "A": {}, "B": {}, "I": {} }, null, 2), 'utf-8');
     }
+    const pollUtilsFile = path.join(utilsDir, 'pollUtils.js');
+    if (!fs.existsSync(pollUtilsFile)) {
+      console.log('🩺 [Self-Heal] Memulihkan file utils/pollUtils.js yang hilang...');
+      const pollCode = `async function sendNativePoll(sock, jid, pollTitle, pollOptions, selectableCount = 1) {
+  return await sock.sendMessage(jid, {
+    poll: {
+      name: pollTitle,
+      values: pollOptions,
+      selectableCount: selectableCount
+    }
+  });
+}
+module.exports = { sendNativePoll };
+`;
+      fs.writeFileSync(pollUtilsFile, pollCode, 'utf-8');
+    }
   } catch (err) {
     console.error('⚠️ [Self-Heal Error]:', err.message);
   }
@@ -162,7 +178,8 @@ let taskManager = {
   markTaskDone: async () => ({ success: false, message: 'taskManager belum terpasang' }),
   deleteTask: async () => ({ success: false, message: 'taskManager belum terpasang' }),
   getTasks: async () => [],
-  checkDatabaseStatus: async () => ({ message: '🟢 Terhubung (Supabase Cloud)' })
+  checkDatabaseStatus: async () => ({ message: '🟢 Terhubung (Supabase Cloud)' }),
+  getLecturers: async () => ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus']
 };
 
 try {
@@ -177,9 +194,15 @@ const {
   markTaskDone,
   deleteTask,
   getTasks,
-  checkDatabaseStatus
+  checkDatabaseStatus,
+  getLecturers
 } = taskManager;
-const { askGeminiAI, resetSession } = require('./utils/aiAssistant');
+const {
+  askGeminiAI,
+  resetSession,
+  formatMemoryForUser,
+  removeFact
+} = require('./utils/aiAssistant');
 const {
   sendDailyBroadcast,
   startScheduler,
@@ -741,11 +764,13 @@ async function handleIncomingMessage(msg) {
 ╰──────────────────────────
 • *${prefix}ai <pertanyaan>* ➔ Tanya apa saja ke Gemini AI
 • *@Bot <pertanyaan>* ➔ Tag bot di grup untuk langsung dijawab
-• *${prefix}reset* ➔ Reset ingatan riwayat obrolan AI
+• *${prefix}ingat* ➔ Cek catatan memori jangka panjang AI tentangmu
+• *${prefix}lupakan <kunci>* ➔ Hapus fakta dari memori jangka panjang
+• *${prefix}reset* ➔ Reset konteks obrolan aktif AI
 • *Kirim Foto/PDF + ${prefix}ai* ➔ Menganalisis & merangkum dokumen
 
-⚡ *Memori & Klarifikasi Otomatis*:
-AI mengingat konteks obrolan hingga 10 menit. Jika perintah Anda belum jelas/ambigu, AI akan ramah bertanya konfirmasi sebelum mengubah data!
+🧠 *Memori Cerdas & Persisten*:
+AI mengingat konteks obrolan panjang & fakta profilmu (nama, kelas, catatan khusus) secara persisten bahkan setelah bot dimuat ulang! Kamu bisa bilang _"AI, ingat namaku Dani dari kelas B ya"_.
 
 👑 *Khusus Chat Pribadi (DM) Owner*:
 Bisa langsung chat santai tanpa mengetik tanda prefiks!`;
@@ -927,10 +952,9 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
       let lecturers = [];
 
       if (!rawLecturersQuery) {
-        // Ambil default dari config jika tidak ada argumen nama
-        lecturers = (Array.isArray(config.defaultLecturers) && config.defaultLecturers.length > 0)
-          ? config.defaultLecturers
-          : ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
+        lecturers = (typeof getLecturers === 'function')
+          ? await getLecturers().catch(() => config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'])
+          : (config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus']);
       } else {
         // Parse nama-nama dosen dari argumen
         if (rawLecturersQuery.includes(',')) {
@@ -1010,11 +1034,11 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
     }
 
     case 'listdosen': {
-      const list = (Array.isArray(config.defaultLecturers) && config.defaultLecturers.length > 0)
-        ? config.defaultLecturers
-        : ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
+      const list = (typeof getLecturers === 'function')
+        ? await getLecturers().catch(() => config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'])
+        : (config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus']);
       const textList = list.map((d, idx) => `▫️ ${idx + 1}. *${d}*`).join('\n');
-      await reply(`🎓 *DAFTAR DOSEN DEFAULT:*\n\n${textList}\n\n_Ketik *${prefix}all* untuk langsung membuat polling untuk semua dosen di atas._`);
+      await reply(`🎓 *DAFTAR DOSEN:*\n\n${textList}\n\n_Ketik *${prefix}all* untuk langsung membuat polling untuk semua dosen di atas._`);
       break;
     }
 
@@ -1050,7 +1074,11 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
       }
 
       if (!namaDosen) {
-        await reply(`❌ Harap masukkan nama dosen.\n\nContoh:\n*${prefix}dosen Frau Woro*\n*${prefix}dosen all Frau Woro* (kirim ke semua grup/saluran terdaftar)`);
+        const list = (typeof getLecturers === 'function')
+          ? await getLecturers().catch(() => config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'])
+          : (config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus']);
+        const textList = list.map((d, idx) => `▫️ ${idx + 1}. *${d}*`).join('\n');
+        await reply(`🎓 *DAFTAR DOSEN KULIAH:*\n\n${textList}\n\nUntuk membuat polling kehadiran dosen:\n• *${prefix}dosen ${list[0] || 'Frau Woro'}* (Polling dosen tertentu)\n• *${prefix}all* (Polling semua dosen sekaligus)`);
         return;
       }
 
@@ -1136,8 +1164,37 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
 
     case 'reset':
     case 'clear': {
-      resetSession(sender || remoteJid);
+      const sessionId = (remoteJid && remoteJid.endsWith('@g.us'))
+        ? `${remoteJid}:${sender || 'user'}`
+        : (remoteJid || sender || 'default');
+      resetSession(sessionId);
       await reply(`🧹 *MEMORI PERCAKAPAN AI DIBERSIHKAN!*\n\nRiwayat konteks obrolan Anda telah direset. Sekarang Anda dapat memulai topik obrolan baru dengan AI.`);
+      break;
+    }
+
+    case 'ingat':
+    case 'memory':
+    case 'aimemory': {
+      const memTarget = (remoteJid && remoteJid.endsWith('@g.us'))
+        ? `${remoteJid}:${sender || 'user'}`
+        : (sender || remoteJid || 'user');
+      const memoryText = formatMemoryForUser(memTarget);
+      await reply(memoryText);
+      break;
+    }
+
+    case 'lupakan':
+    case 'forget': {
+      const memTarget = (remoteJid && remoteJid.endsWith('@g.us'))
+        ? `${remoteJid}:${sender || 'user'}`
+        : (sender || remoteJid || 'user');
+      const keyToForget = query.trim();
+      removeFact(memTarget, keyToForget || null);
+      if (keyToForget) {
+        await reply(`🧠 *[Memori Dihapus]* AI telah melupakan informasi tentang *"${keyToForget}"*.`);
+      } else {
+        await reply(`🧠 *[Semua Memori Dihapus]* Seluruh catatan memori jangka panjang tentangmu telah dihapus.`);
+      }
       break;
     }
 

@@ -11,35 +11,20 @@ let taskManager = {
 try {
   taskManager = require('./taskManager');
 } catch (e) {}
-const { addTask, markTaskDone, deleteTask, getTasks, formatTaskList, checkDatabaseStatus } = taskManager;
+const { addTask, markTaskDone, deleteTask, getTasks, formatTaskList, checkDatabaseStatus, getLecturers } = taskManager;
 const { loadConfig, saveConfig } = require('../configManager');
 const { startScheduler, stopScheduler, sendDailyBroadcast } = require('../scheduler');
 
-// Map memori percakapan: Map<sessionId, { lastActive: number, turns: Array<{ role: string, text: string }> }>
-const sessionMap = new Map();
-
-// Pembersih otomatis sesi percakapan yang kadaluarsa (TTL 10 menit)
-setInterval(() => {
-  const now = Date.now();
-  const TTL = 10 * 60 * 1000;
-  for (const [id, s] of sessionMap.entries()) {
-    if (now - s.lastActive > TTL) sessionMap.delete(id);
-  }
-}, 5 * 60 * 1000);
-
-/**
- * Menghapus/me-reset ingatan riwayat obrolan AI
- */
-function resetSession(sessionId) {
-  if (sessionId) {
-    sessionMap.delete(sessionId);
-    for (const key of sessionMap.keys()) {
-      if (key.includes(sessionId)) sessionMap.delete(key);
-    }
-    return true;
-  }
-  return false;
-}
+const {
+  getSession,
+  addSessionTurn,
+  resetSession,
+  getLongTermFacts,
+  saveFact,
+  removeFact,
+  getFormattedMemoryPrompt,
+  formatMemoryForUser
+} = require('./memoryManager');
 
 /**
  * Mengirim pertanyaan ke Google Gemini AI (gemini-3.8-flash)
@@ -56,7 +41,15 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
 
   const dt = getIndonesianDateTime();
   const schedules = getSchedules();
-  const defaultLecturers = config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
+  const defaultLecturers = (typeof getLecturers === 'function')
+    ? await getLecturers().catch(() => config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'])
+    : (config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus']);
+
+  // Target identifikasi untuk memori jangka panjang
+  const memoryTargetId = (remoteJid && remoteJid.endsWith('@g.us'))
+    ? `${remoteJid}:${senderJid || 'user'}`
+    : (senderJid || remoteJid || 'user');
+  const longTermMemoryPrompt = getFormattedMemoryPrompt(memoryTargetId);
 
   // Cek status database Supabase
   const dbStatus = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Terhubung' })) : { message: '🟢 Terhubung' };
@@ -86,6 +79,9 @@ KONTEKS WAKTU, KAMPUS & DATABASE:
 - Status Cloud Database Supabase: ${dbStatus.message}
 - Dosen pengampu: ${defaultLecturers.join(', ')}
 - Data Jadwal Kuliah Saat Ini (Kelas A, B, I): ${scheduleSummary}
+
+MEMORI JANGKA PANJANG (PROFIL & FAKTA TERSIMPAN TENTANG PENGGUNA/OBROLAN INI):
+${longTermMemoryPrompt}
 
 KEMAMPUAN BAHASA MAHASISWA & SINGKATAN KAMPUS:
 - Paham singkatan matkul: DFA, Basdat (Basis Data), Matdis (Matematika Diskrit), Jarkom (Jaringan Komputer), Alpro (Algoritma Pemrograman), RPL, AI, B.Inggris, dll.
@@ -146,12 +142,21 @@ Jika menanyakan status sistem / bot / database:
 Jika menyuruh restart bot:
 [[ACTION:SYSTEM:{"action":"restart"}]]
 
-9. KEMAMPUAN MEMORI & KLARIFIKASI PERCAKAPAN:
-- Kamu memiliki daya ingat (riwayat beberapa pesan terakhir) dengan pengguna.
+9. KEMAMPUAN MENGINGAT CERDAS (LONG-TERM MEMORY):
+- Jika pengguna memperkenalkan diri atau meminta mengingat fakta (contoh: "namaku Dani", "panggil aku mas ganteng", "aku kelas B", "ingat bahwa deadline DFA diundur", "catat tugas ini..."):
+  Sertakan aksi mengingat di akhir pesan:
+  [[ACTION:REMEMBER:{"key":"nama_panggilan","value":"Dani"}]] atau
+  [[ACTION:REMEMBER:{"key":"kelas_favorit","value":"B"}]] atau
+  [[ACTION:REMEMBER:{"key":"catatan_khusus","value":"..."}]]
+- Jika pengguna menyuruh melupakan sesuatu (contoh: "lupakan namaku", "hapus catatan tadi"):
+  [[ACTION:FORGET:{"key":"nama_panggilan"}]]
+
+10. KEMAMPUAN MEMORI PERCAKAPAN & KLARIFIKASI:
+- Kamu memiliki daya ingat percakapan yang panjang dengan pengguna.
 - Jika pengguna memberikan instruksi yang kurang lengkap, ambigu, atau merujuk ke data/obrolan sebelumnya (contoh: "tolong tambahkan data ini ke database", "jadwalnya tolong diganti", "masukin data tadi"):
   • CEK konteks riwayat percakapan di atas.
   • Jika konteksnya SUDAH PASTI dan jelas dari riwayat sebelumnya, langsung jalankan aksi database yang diminta!
-  • Jika konteksnya MASIH BELUM PASTI / BISA BERMAKNA GANDA (misalnya di riwayat ada jadwal dan ada tugas, atau kelasnya belum disebut), JANGAN MENEBAK ASAL. AJUKAN PERTANYAAN KLARIFIKASI terlebih dahulu secara santai dan ramah (contoh: "Siap kak! Maksud kamu mau memasukkan data *Jadwal Kuliah* atau *Tugas Kuliah* nih?").
+  • Jika konteksnya MASIH BELUM PASTI / BISA BERMAKNA GANDA (misalnya di riwayat ada jadwal dan ada tugas, atau kelasnya belum disebut), JANGAN MENEBAK ASAL. AJUKAN PERTANYAAN KLARIFIKASI terlebih dahulu secara santai dan ramah.
   • Begitu pengguna mengonfirmasi/mengklarifikasi, segera hubungkan konteksnya dan eksekusi action tag yang tepat!
 
 Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu).`;
@@ -168,13 +173,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
     ? `${remoteJid}:${senderJid || 'user'}`
     : (remoteJid || senderJid || 'default');
 
-  const now = Date.now();
-  const TTL = 10 * 60 * 1000;
-  let session = sessionMap.get(sessionId);
-  if (!session || (now - session.lastActive > TTL)) {
-    session = { lastActive: now, turns: [] };
-  }
-  session.lastActive = now;
+  const session = getSession(sessionId);
 
   // Bangun array contents (riwayat chat terdahulu + chat saat ini)
   const contents = [];
@@ -390,33 +389,35 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 if (!isSenderOwner) return `${cleanReply}\n\n⚠️ Hanya Owner yang boleh me-restart bot.`;
                 setTimeout(() => process.exit(0), 1500);
                 return `${cleanReply}\n\n🔄 *[Me-restart Bot]* Bot sedang dimuat ulang, tunggu 3 detik ya...`;
+              } else if (actionType === 'REMEMBER') {
+                if (actionData.key && actionData.value) {
+                  saveFact(memoryTargetId, actionData.key, actionData.value);
+                  console.log(`🧠 [AI Memory Saved] ${memoryTargetId} -> ${actionData.key}: ${actionData.value}`);
+                }
+              } else if (actionType === 'FORGET') {
+                if (actionData.key) {
+                  removeFact(memoryTargetId, actionData.key);
+                  console.log(`🧠 [AI Memory Removed] ${memoryTargetId} -> ${actionData.key}`);
+                }
               }
             }
           } catch (eAction) {
             console.error('❌ [Action Execution Error]:', eAction.message);
           }
 
-          // Simpan percakapan ke memori sesi (hanya teks murni)
+          // Simpan percakapan ke memori sesi persisten (hanya teks murni)
           try {
-            session.turns.push({ role: 'user', text: userQuestion || '(mengirim lampiran)' });
-            session.turns.push({ role: 'model', text: cleanReply });
-            if (session.turns.length > 6) {
-              session.turns = session.turns.slice(-6);
-            }
-            sessionMap.set(sessionId, session);
+            addSessionTurn(sessionId, 'user', userQuestion || '(mengirim lampiran)');
+            addSessionTurn(sessionId, 'model', cleanReply);
           } catch (eMem) {}
 
           return cleanReply;
         }
 
-        // Simpan percakapan reguler ke memori sesi
+        // Simpan percakapan reguler ke memori sesi persisten
         try {
-          session.turns.push({ role: 'user', text: userQuestion || '(mengirim lampiran)' });
-          session.turns.push({ role: 'model', text: replyText });
-          if (session.turns.length > 6) {
-            session.turns = session.turns.slice(-6);
-          }
-          sessionMap.set(sessionId, session);
+          addSessionTurn(sessionId, 'user', userQuestion || '(mengirim lampiran)');
+          addSessionTurn(sessionId, 'model', replyText);
         } catch (eMem) {}
 
         return replyText;
@@ -434,6 +435,10 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
 
 module.exports = {
   askGeminiAI,
-  resetSession
+  resetSession,
+  formatMemoryForUser,
+  saveFact,
+  removeFact,
+  getLongTermFacts
 };
 
