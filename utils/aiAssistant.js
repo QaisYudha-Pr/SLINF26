@@ -15,6 +15,22 @@ const { addTask, markTaskDone, deleteTask, getTasks, formatTaskList, checkDataba
 const { loadConfig, saveConfig } = require('../configManager');
 const { startScheduler, stopScheduler, sendDailyBroadcast } = require('../scheduler');
 
+let memoryManager = {
+  getSession: () => ({ turns: [] }),
+  addSessionTurn: () => {},
+  resetSession: () => true,
+  getLongTermFacts: () => ({}),
+  saveFact: () => true,
+  removeFact: () => true,
+  getFormattedMemoryPrompt: () => 'Belum ada catatan memori khusus.',
+  formatMemoryForUser: () => '🧠 Belum ada catatan memori tersimpan.'
+};
+try {
+  memoryManager = require('./memoryManager');
+} catch (e) {
+  console.warn('⚠️ [aiAssistant] utils/memoryManager.js belum termuat, menggunakan memori fallback.');
+}
+
 const {
   getSession,
   addSessionTurn,
@@ -24,7 +40,7 @@ const {
   removeFact,
   getFormattedMemoryPrompt,
   formatMemoryForUser
-} = require('./memoryManager');
+} = memoryManager;
 
 /**
  * Mengirim pertanyaan ke Google Gemini AI (gemini-3.8-flash)

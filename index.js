@@ -197,12 +197,24 @@ const {
   checkDatabaseStatus,
   getLecturers
 } = taskManager;
+let aiAssistantModule = {
+  askGeminiAI: async () => '⚠️ Fitur AI sedang disinkronkan.',
+  resetSession: () => true,
+  formatMemoryForUser: () => '🧠 Memori AI belum termuat.',
+  removeFact: () => true
+};
+try {
+  aiAssistantModule = require('./utils/aiAssistant');
+} catch (e) {
+  console.warn('⚠️ [aiAssistant Info]: Modul utils/aiAssistant.js bermasalah:', e.message);
+}
+
 const {
   askGeminiAI,
   resetSession,
   formatMemoryForUser,
   removeFact
-} = require('./utils/aiAssistant');
+} = aiAssistantModule;
 const {
   sendDailyBroadcast,
   startScheduler,
