@@ -1,6 +1,15 @@
 const { getIndonesianDateTime } = require('./formatter');
 const { getSchedules, addScheduleItem, deleteScheduleItem, saveBatchSchedule } = require('./scheduleManager');
-const { addTask, markTaskDone, deleteTask, getTasks } = require('./taskManager');
+let taskManager = {
+  getTasks: async () => [],
+  addTask: async () => ({ success: false, task: {} }),
+  markTaskDone: async () => ({ success: false }),
+  deleteTask: async () => ({ success: false })
+};
+try {
+  taskManager = require('./taskManager');
+} catch (e) {}
+const { addTask, markTaskDone, deleteTask, getTasks } = taskManager;
 const { loadConfig, saveConfig } = require('../configManager');
 const { startScheduler, stopScheduler } = require('../scheduler');
 

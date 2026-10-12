@@ -156,13 +156,27 @@ const {
   scanScheduleWithGemini,
   getSchedules
 } = require('./utils/scheduleManager');
+let taskManager = {
+  formatTaskList: async () => '⚠️ Fitur taskManager sedang disinkronkan. Ketik /update untuk memperbarui.',
+  addTask: async () => ({ success: false, message: 'taskManager belum terpasang' }),
+  markTaskDone: async () => ({ success: false, message: 'taskManager belum terpasang' }),
+  deleteTask: async () => ({ success: false, message: 'taskManager belum terpasang' }),
+  getTasks: async () => []
+};
+
+try {
+  taskManager = require('./utils/taskManager');
+} catch (e) {
+  console.warn('⚠️ [taskManager Info]: Modul utils/taskManager.js belum ada di lokal, menggunakan cadangan.');
+}
+
 const {
   formatTaskList,
   addTask,
   markTaskDone,
   deleteTask,
   getTasks
-} = require('./utils/taskManager');
+} = taskManager;
 const { askGeminiAI } = require('./utils/aiAssistant');
 const {
   sendDailyBroadcast,
