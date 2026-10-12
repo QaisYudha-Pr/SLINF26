@@ -238,30 +238,18 @@ function findForwardedNewsletterInfo(obj) {
 }
 
 /**
- * Helper untuk mengirim polling dengan auto-fallback:
- * - Saluran WhatsApp (@newsletter): Meta secara teknis TIDAK MENDUKUNG pesan jenis poll.
- *   Sebagai solusinya, bot otomatis mengubahnya ke format Polling Reaksi Emoji yang resmi didukung saluran!
- * - Grup (@g.us) / DM: Mengirim bubble polling interaktif resmi WhatsApp.
+ * Helper untuk mengirim Polling Asli WhatsApp:
+ * Mendukung Saluran WhatsApp (@newsletter), Grup (@g.us), dan Chat Pribadi.
+ * @param selectableCount 1 untuk single-choice, 0 untuk multiple-choice (izinkan beberapa jawaban)
  */
-async function sendPollOrReactionFallback(sockInstance, targetJid, pollName, pollOptions) {
-  if (targetJid && targetJid.endsWith('@newsletter')) {
-    const emojis = ['👍', '❌', '❓', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
-    const lines = pollOptions.map((opt, i) => `${emojis[i] || '▫️'} = *${opt}*`).join('\n');
-    const newsletterText = 
-`📊 *${pollName}*
-━━━━━━━━━━━━━━━━━━━━
-📢 _Beri reaksi emoji pada pesan ini untuk voting:_
-${lines}`;
-    return await sockInstance.sendMessage(targetJid, { text: newsletterText });
-  } else {
-    return await sockInstance.sendMessage(targetJid, {
-      poll: {
-        name: pollName,
-        values: pollOptions,
-        selectableCount: 1
-      }
-    });
-  }
+async function sendNativePoll(sockInstance, targetJid, pollName, pollOptions, selectableCount = 1) {
+  return await sockInstance.sendMessage(targetJid, {
+    poll: {
+      name: pollName,
+      values: pollOptions,
+      selectableCount: selectableCount
+    }
+  });
 }
 
 /**
@@ -887,13 +875,21 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
     case 'all':
     case 'pollall': {
       let isBroadcastAll = false;
+      let isSplitMode = false;
       let rawLecturersQuery = query;
 
-      // Cek apakah ada kata kunci 'target', 'targets', 'saluran', 'channel'
-      if (args[1] && ['target', 'targets', 'saluran', 'channel', 'semua'].includes(args[1].toLowerCase())) {
+      // Cek apakah ada kata kunci 'target', 'targets', 'saluran', 'channel', 'split', 'pisah'
+      if (args.some(a => ['target', 'targets', 'saluran', 'channel', 'semua'].includes(a.toLowerCase()))) {
         isBroadcastAll = true;
-        rawLecturersQuery = query.slice(args[1].length).trim();
       }
+      if (args.some(a => ['split', 'pisah', 'each', 'satuan'].includes(a.toLowerCase()))) {
+        isSplitMode = true;
+      }
+
+      // Bersihkan kata kunci mode dari rawLecturersQuery
+      rawLecturersQuery = rawLecturersQuery
+        .replace(/\b(target|targets|saluran|channel|semua|split|pisah|each|satuan)\b/gi, '')
+        .trim();
 
       let lecturers = [];
 
@@ -916,13 +912,11 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
       }
 
       if (lecturers.length === 0) {
-        await reply(`❌ Daftar nama dosen tidak boleh kosong.\n\nContoh penggunaan:\n*${prefix}all*\n*${prefix}all target* (kirim ke semua grup/saluran terdaftar)\n*${prefix}all Frau Woro, Frau Wisma, Frau Lita, Herr Agus*`);
+        await reply(`❌ Daftar nama dosen tidak boleh kosong.\n\nContoh penggunaan:\n*${prefix}all* (1 Polling All-in-One hemat chat)\n*${prefix}all target* (Kirim ke seluruh saluran/grup terdaftar)\n*${prefix}all split* (Polling terpisah 1 per 1 dosen)`);
         return;
       }
 
       const dt = getIndonesianDateTime();
-      const defaultPollValues = ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'];
-
       const destinationJids = isBroadcastAll 
         ? ((config.targetJids && config.targetJids.length > 0) ? config.targetJids : [remoteJid]) 
         : [remoteJid];
@@ -930,36 +924,47 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
       if (isBroadcastAll && (!config.targetJids || config.targetJids.length === 0)) {
         await reply(`⚠️ Belum ada target grup/saluran di config. Polling dikirim ke obrolan ini.`);
       } else if (isBroadcastAll) {
-        await reply(`⏳ Mengirim polling seluruh dosen (${lecturers.length} dosen) ke ${destinationJids.length} target...`);
+        await reply(`⏳ Mengirim polling kehadiran dosen ke ${destinationJids.length} target...`);
       }
 
-      console.log(`📊 [Poll All] Mengirim polling ${lecturers.length} dosen ke ${destinationJids.length} tujuan...`);
+      console.log(`📊 [Poll All] Mengirim polling ${lecturers.length} dosen (Split: ${isSplitMode}) ke ${destinationJids.length} tujuan...`);
 
       for (const destJid of destinationJids) {
         const isNewsletter = destJid.endsWith('@newsletter');
-        const introText = isNewsletter
-          ? `🎓 *POLLING KEHADIRAN DOSEN*\n📅 *Hari, Tanggal:* ${dt.dayName}, ${dt.dateFormatted}\n⏰ *Waktu:* ${dt.timeFormatted}\n━━━━━━━━━━━━━━━━━━━━\n📢 _Khusus Saluran WhatsApp: Polling menggunakan sistem *Reaksi Emoji*. Silakan tap pesan dosen di bawah & beri reaksi emoji untuk memilih:_`
-          : `🎓 *POLLING KEHADIRAN DOSEN*\n📅 *Hari, Tanggal:* ${dt.dayName}, ${dt.dateFormatted}\n⏰ *Waktu:* ${dt.timeFormatted}\n━━━━━━━━━━━━━━━━━━━━\n_Silakan pilih status kehadiran masing-masing dosen di bawah ini:_`;
 
-        try {
-          await sock.sendMessage(destJid, { text: introText });
-        } catch (eIntro) {
-          console.error(`[Poll Intro Error] Gagal kirim intro ke ${destJid}:`, eIntro.message);
-        }
+        // Jika di Saluran ATAU mode default (non-split): Kirim 1 Polling All-in-One resmi agar TIDAK MEMENUHI CHAT!
+        if (isNewsletter || !isSplitMode) {
+          const pollTitle = `🎓 Polling Kehadiran Dosen (${dt.dayName}, ${dt.dateFormatted})`;
+          const pollOptions = [
+            '✅ Semua Dosen Hadir',
+            ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
+            '❓ Belum Ada Info Pasti'
+          ];
 
-        for (let i = 0; i < lecturers.length; i++) {
-          const lecturer = lecturers[i];
-          await new Promise(resolve => setTimeout(resolve, 800));
           try {
-            await sendPollOrReactionFallback(sock, destJid, `🎓 Kehadiran: ${lecturer}`, defaultPollValues);
+            // selectableCount: 0 = Izinkan beberapa jawaban (Multiple Choice)
+            await sendNativePoll(sock, destJid, pollTitle, pollOptions, 0);
+            console.log(`📊 [Poll All-in-One Sent] ke ${destJid}`);
           } catch (err) {
-            console.error(`[Poll Error] Gagal kirim poll ${lecturer} ke ${destJid}:`, err.message);
+            console.error(`[Poll All-in-One Error] ke ${destJid}:`, err.message);
+          }
+        } else {
+          // Mode Split: Kirim polling per masing-masing dosen
+          const defaultPollValues = ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'];
+          for (let i = 0; i < lecturers.length; i++) {
+            const lecturer = lecturers[i];
+            await new Promise(resolve => setTimeout(resolve, 600));
+            try {
+              await sendNativePoll(sock, destJid, `🎓 Kehadiran: ${lecturer}`, defaultPollValues, 1);
+            } catch (err) {
+              console.error(`[Poll Split Error] Gagal kirim poll ${lecturer} ke ${destJid}:`, err.message);
+            }
           }
         }
       }
 
       if (isBroadcastAll && config.targetJids && config.targetJids.length > 0) {
-        await reply(`✅ Berhasil mengirim polling kehadiran seluruh dosen ke ${destinationJids.length} target terdaftar!`);
+        await reply(`✅ Berhasil mengirim polling kehadiran resmi ke ${destinationJids.length} target terdaftar!`);
       }
       break;
     }
@@ -1016,7 +1021,7 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
           const targets = config.targetJids || [];
           if (targets.length === 0) {
             await reply(`⚠️ Belum ada target yang didaftarkan di config. Polling dikirim ke chat ini saja.`);
-            await sendPollOrReactionFallback(sock, remoteJid, `🎓 Kehadiran: ${namaDosen}`, pollValues);
+            await sendNativePoll(sock, remoteJid, `🎓 Kehadiran: ${namaDosen}`, pollValues, 1);
             return;
           }
 
@@ -1024,7 +1029,7 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
           let successCount = 0;
           for (const t of targets) {
             try {
-              await sendPollOrReactionFallback(sock, t, `🎓 Kehadiran: ${namaDosen}`, pollValues);
+              await sendNativePoll(sock, t, `🎓 Kehadiran: ${namaDosen}`, pollValues, 1);
               successCount++;
             } catch (err) {
               console.error(`Gagal kirim poll ke ${t}:`, err.message);
@@ -1032,7 +1037,7 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
           }
           await reply(`✅ Polling kehadiran *${namaDosen}* berhasil dikirim ke *${successCount}* dari *${targets.length}* target!`);
         } else {
-          await sendPollOrReactionFallback(sock, remoteJid, `🎓 Kehadiran: ${namaDosen}`, pollValues);
+          await sendNativePoll(sock, remoteJid, `🎓 Kehadiran: ${namaDosen}`, pollValues, 1);
           console.log(`📊 [Polling Terkirim] Kehadiran Dosen: ${namaDosen} ke ${remoteJid}`);
         }
       } catch (err) {
@@ -1059,7 +1064,7 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
       }
 
       try {
-        await sendPollOrReactionFallback(sock, remoteJid, pollQuestion, pollOptions);
+        await sendNativePoll(sock, remoteJid, pollQuestion, pollOptions, 1);
         console.log(`📊 [Custom Poll Terkirim] "${pollQuestion}" ke ${remoteJid}`);
       } catch (err) {
         console.error('[Custom Poll Error]', err);

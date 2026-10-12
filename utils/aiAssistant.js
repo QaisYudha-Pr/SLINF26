@@ -321,14 +321,23 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                   ? actionData.lecturers 
                   : defaultLecturers;
                 (async () => {
-                  for (const lecturer of lecturers) {
-                    await new Promise(r => setTimeout(r, 600));
-                    try {
-                      if (remoteJid.endsWith('@newsletter')) {
-                        await sockInstance.sendMessage(remoteJid, {
-                          text: `📊 *🎓 Kehadiran: ${lecturer}*\n━━━━━━━━━━━━━━━━━━━━\n📢 _Beri reaksi emoji pada pesan ini:_\n👍 = *✅ Hadir*\n❌ = *❌ Tidak*\n❓ = *❓ Belum Diketahui*`
-                        });
-                      } else {
+                  try {
+                    if (remoteJid.endsWith('@newsletter')) {
+                      // Di Saluran: Kirim 1 Polling Asli All-in-One agar tidak memenuhi chat!
+                      await sockInstance.sendMessage(remoteJid, {
+                        poll: {
+                          name: `🎓 Polling Kehadiran Dosen (${todayKey})`,
+                          values: [
+                            '✅ Semua Dosen Hadir',
+                            ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
+                            '❓ Belum Ada Info Pasti'
+                          ],
+                          selectableCount: 0
+                        }
+                      });
+                    } else {
+                      for (const lecturer of lecturers) {
+                        await new Promise(r => setTimeout(r, 600));
                         await sockInstance.sendMessage(remoteJid, {
                           poll: {
                             name: `🎓 Kehadiran: ${lecturer}`,
@@ -337,9 +346,9 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                           }
                         });
                       }
-                    } catch (errP) {
-                      console.error('[AI Poll Lecturer Error]:', errP.message);
                     }
+                  } catch (errP) {
+                    console.error('[AI Poll Lecturer Error]:', errP.message);
                   }
                 })();
                 return `${cleanReply}\n\n📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* sedang dikirim ke chat ini.`;
@@ -350,21 +359,13 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 const pollName = actionData.name || 'Polling';
                 const pollOpts = Array.isArray(actionData.options) && actionData.options.length >= 2 ? actionData.options : ['Ya', 'Tidak'];
                 try {
-                  if (remoteJid.endsWith('@newsletter')) {
-                    const emojis = ['👍', '❌', '❓', '1️⃣', '2️⃣', '3️⃣', '4️⃣'];
-                    const lines = pollOpts.map((o, idx) => `${emojis[idx] || '▫️'} = *${o}*`).join('\n');
-                    await sockInstance.sendMessage(remoteJid, {
-                      text: `📊 *${pollName}*\n━━━━━━━━━━━━━━━━━━━━\n📢 _Beri reaksi emoji untuk memilih:_\n${lines}`
-                    });
-                  } else {
-                    await sockInstance.sendMessage(remoteJid, {
-                      poll: {
-                        name: pollName,
-                        values: pollOpts,
-                        selectableCount: 1
-                      }
-                    });
-                  }
+                  await sockInstance.sendMessage(remoteJid, {
+                    poll: {
+                      name: pollName,
+                      values: pollOpts,
+                      selectableCount: 1
+                    }
+                  });
                   return `${cleanReply}\n\n📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke chat!`;
                 } catch (ePoll) {
                   return `${cleanReply}\n\n⚠️ Gagal membuat polling: ${ePoll.message}`;
