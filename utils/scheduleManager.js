@@ -2,6 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const { getIndonesianDateTime } = require('./formatter');
 
+let fetchSupabase = null;
+try {
+  const tm = require('./taskManager');
+  fetchSupabase = tm.fetchSupabase;
+} catch (e) {}
+
 const SCHEDULES_FILE = path.join(__dirname, '..', 'schedules.json');
 
 /**
@@ -230,9 +236,50 @@ Tugas Anda:
 }
 
 /**
- * Menambahkan atau memperbarui item jadwal untuk kelas dan hari tertentu
+ * Sinkronisasi item jadwal ke Supabase Cloud Database (Anti-Duplikasi)
  */
-function addScheduleItem(classKey, dayKey, item) {
+async function syncScheduleToSupabase(cKey, dKey, item) {
+  if (!fetchSupabase) return;
+  try {
+    // 1. Hapus entri matkul lama jika ada di kelas dan hari yang sama
+    await fetchSupabase(`schedules?kelas=eq.${encodeURIComponent(cKey)}&hari=eq.${encodeURIComponent(dKey)}&matkul=eq.${encodeURIComponent(item.matkul)}`, {
+      method: 'DELETE'
+    });
+    // 2. Masukkan data terbaru ke Supabase
+    await fetchSupabase('schedules', {
+      method: 'POST',
+      body: JSON.stringify({
+        kelas: cKey,
+        hari: dKey,
+        jam: item.jam || '-',
+        matkul: item.matkul || 'Mata Kuliah',
+        dosen: item.dosen || '-',
+        ruang: item.ruang || '-'
+      })
+    });
+  } catch (err) {
+    console.warn('⚠️ [Supabase Sync Schedule]:', err.message);
+  }
+}
+
+/**
+ * Hapus item jadwal dari Supabase Cloud Database
+ */
+async function deleteScheduleFromSupabase(cKey, dKey, matkulQuery) {
+  if (!fetchSupabase) return;
+  try {
+    await fetchSupabase(`schedules?kelas=eq.${encodeURIComponent(cKey)}&hari=eq.${encodeURIComponent(dKey)}&matkul=ilike.*${encodeURIComponent(matkulQuery)}*`, {
+      method: 'DELETE'
+    });
+  } catch (err) {
+    console.warn('⚠️ [Supabase Delete Schedule]:', err.message);
+  }
+}
+
+/**
+ * Menambahkan atau memperbarui item jadwal untuk kelas dan hari tertentu (Anti-Duplikasi & Upsert)
+ */
+async function addScheduleItem(classKey, dayKey, item) {
   const schedules = getSchedules();
   const cKey = (classKey || 'A').toUpperCase();
   const dKey = (dayKey || 'senin').toLowerCase();
@@ -240,31 +287,43 @@ function addScheduleItem(classKey, dayKey, item) {
   if (!schedules[cKey]) schedules[cKey] = {};
   if (!schedules[cKey][dKey]) schedules[cKey][dKey] = [];
 
+  // Cari apakah matkul sudah pernah ada untuk mencegah penumpukan data
+  const existingIdx = schedules[cKey][dKey].findIndex(
+    s => (s.matkul || '').trim().toLowerCase() === (item.matkul || '').trim().toLowerCase()
+  );
+
+  let finalItem = null;
   if (existingIdx >= 0) {
     const prev = schedules[cKey][dKey][existingIdx];
-    schedules[cKey][dKey][existingIdx] = {
+    finalItem = {
       jam: (item.jam && item.jam !== '-') ? item.jam : prev.jam,
       matkul: item.matkul || prev.matkul,
       dosen: (item.dosen && item.dosen !== '-') ? item.dosen : prev.dosen,
       ruang: (item.ruang && item.ruang !== '-') ? item.ruang : prev.ruang
     };
+    schedules[cKey][dKey][existingIdx] = finalItem;
   } else {
-    schedules[cKey][dKey].push({
+    finalItem = {
       jam: item.jam || '-',
       matkul: item.matkul || 'Mata Kuliah',
       dosen: item.dosen || '-',
       ruang: item.ruang || '-'
-    });
+    };
+    schedules[cKey][dKey].push(finalItem);
   }
 
   saveSchedules(schedules);
-  return { success: true, cKey, dKey, total: schedules[cKey][dKey].length };
+
+  // Sync ke Supabase Cloud
+  await syncScheduleToSupabase(cKey, dKey, finalItem);
+
+  return { success: true, cKey, dKey, total: schedules[cKey][dKey].length, isUpdated: existingIdx >= 0 };
 }
 
 /**
  * Menghapus mata kuliah dari jadwal kelas dan hari tertentu
  */
-function deleteScheduleItem(classKey, dayKey, matkulQuery) {
+async function deleteScheduleItem(classKey, dayKey, matkulQuery) {
   const schedules = getSchedules();
   const cKey = (classKey || 'A').toUpperCase();
   const dKey = (dayKey || 'senin').toLowerCase();
@@ -282,13 +341,17 @@ function deleteScheduleItem(classKey, dayKey, matkulQuery) {
   const deletedCount = originalLen - schedules[cKey][dKey].length;
   saveSchedules(schedules);
 
+  if (deletedCount > 0) {
+    await deleteScheduleFromSupabase(cKey, dKey, matkulQuery);
+  }
+
   return { success: deletedCount > 0, deletedCount, cKey, dKey };
 }
 
 /**
  * Menyimpan jadwal satu minggu penuh sekaligus untuk satu kelas
  */
-function saveBatchSchedule(classKey, weekScheduleObj) {
+async function saveBatchSchedule(classKey, weekScheduleObj) {
   const schedules = getSchedules();
   const cKey = (classKey || 'A').toUpperCase();
   if (!schedules[cKey]) schedules[cKey] = {};
@@ -299,6 +362,34 @@ function saveBatchSchedule(classKey, weekScheduleObj) {
   }
 
   saveSchedules(schedules);
+
+  // Sinkronisasi Batch ke Supabase Cloud
+  if (fetchSupabase) {
+    try {
+      await fetchSupabase(`schedules?kelas=eq.${encodeURIComponent(cKey)}`, { method: 'DELETE' });
+      const rows = [];
+      for (const [day, list] of Object.entries(weekScheduleObj)) {
+        if (Array.isArray(list)) {
+          for (const it of list) {
+            rows.push({
+              kelas: cKey,
+              hari: day.toLowerCase(),
+              jam: it.jam || '-',
+              matkul: it.matkul || 'Mata Kuliah',
+              dosen: it.dosen || '-',
+              ruang: it.ruang || '-'
+            });
+          }
+        }
+      }
+      if (rows.length > 0) {
+        await fetchSupabase('schedules', { method: 'POST', body: JSON.stringify(rows) });
+      }
+    } catch (e) {
+      console.warn('⚠️ [Supabase Batch Sync]:', e.message);
+    }
+  }
+
   return { success: true, cKey, days: Object.keys(weekScheduleObj) };
 }
 
@@ -311,3 +402,4 @@ module.exports = {
   deleteScheduleItem,
   saveBatchSchedule
 };
+

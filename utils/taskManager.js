@@ -267,6 +267,7 @@ module.exports = {
   markTaskDone,
   deleteTask,
   formatTaskList,
-  checkDatabaseStatus
+  checkDatabaseStatus,
+  fetchSupabase
 };
 
