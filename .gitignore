@@ -7,3 +7,4 @@ config.json
 *.log
 PWSupabase.md
 backup/
+tasks.json

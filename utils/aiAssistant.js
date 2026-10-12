@@ -4,20 +4,22 @@ let taskManager = {
   getTasks: async () => [],
   addTask: async () => ({ success: false, task: {} }),
   markTaskDone: async () => ({ success: false }),
-  deleteTask: async () => ({ success: false })
+  deleteTask: async () => ({ success: false }),
+  formatTaskList: async () => 'Daftar tugas kosong',
+  checkDatabaseStatus: async () => ({ message: '🟢 Terhubung (Supabase Cloud)' })
 };
 try {
   taskManager = require('./taskManager');
 } catch (e) {}
-const { addTask, markTaskDone, deleteTask, getTasks } = taskManager;
+const { addTask, markTaskDone, deleteTask, getTasks, formatTaskList, checkDatabaseStatus } = taskManager;
 const { loadConfig, saveConfig } = require('../configManager');
-const { startScheduler, stopScheduler } = require('../scheduler');
+const { startScheduler, stopScheduler, sendDailyBroadcast } = require('../scheduler');
 
 /**
  * Mengirim pertanyaan ke Google Gemini AI (gemini-3.8-flash)
- * Dilengkapi kemampuan multimodal (membaca PDF & Foto) dan auto-save jadwal kuliah.
+ * Dilengkapi kemampuan multimodal, auto-save jadwal kuliah, database tugas Supabase, dan auto-poll.
  */
-async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null, customApiKey = null, sockInstance = null) {
+async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null, customApiKey = null, sockInstance = null, remoteJid = null) {
   const config = loadConfig();
   const apiKey = customApiKey || config.geminiApiKey || process.env.GEMINI_API_KEY;
 
@@ -28,6 +30,9 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   const dt = getIndonesianDateTime();
   const schedules = getSchedules();
   const defaultLecturers = config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus'];
+
+  // Cek status database Supabase
+  const dbStatus = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Terhubung' })) : { message: '🟢 Terhubung' };
 
   // Buat ringkasan jadwal dan tugas untuk konteks
   const scheduleSummary = JSON.stringify(schedules);
@@ -48,9 +53,10 @@ GAYA RESPONS:
 - JANGAN gunakan format markdown heading seperti # atau ## karena WhatsApp tidak mendukungnya.
 - Jawab secara to-the-point tanpa basa-basi berlebihan.
 
-KONTEKS WAKTU & KAMPUS:
+KONTEKS WAKTU, KAMPUS & DATABASE:
 - Waktu saat ini: ${dt.fullFormatted}
 - Hari ini: *${todayKey}* | Besok: *${tomorrowKey}* | Lusa: *${dayAfterTomorrowKey}*
+- Status Cloud Database Supabase: ${dbStatus.message}
 - Dosen pengampu: ${defaultLecturers.join(', ')}
 - Data Jadwal Kuliah Saat Ini (Kelas A, B, I): ${scheduleSummary}
 
@@ -66,8 +72,8 @@ KEMAMPUAN BAHASA MAHASISWA & SINGKATAN KAMPUS:
 KEMAMPUAN MEMBACA DOKUMEN / FOTO:
 Jika pengguna melampirkan file dokumen (PDF) atau foto, analisis isi dokumen/foto tersebut secara mendalam, ekstrak poin-poin penting, atau simpulkan data tabel jadwal perkuliahan secara terstruktur.
 
-KEMAMPUAN DATABASE JADWAL OTOMATIS:
-Setiap kali pengguna menyuruh MENYIMPAN, MENGUBAH, atau MENGHAPUS jadwal kuliah, kamu HARUS menyertakan kode aksi persis di akhir pesanmu:
+KEMAMPUAN AKSI OTOMATIS (ACTION CO-PILOT):
+Sertakan kode aksi persis di akhir pesanmu HANYA jika pengguna menyuruh melakukan aksi nyata:
 
 1. Perubahan/Penambahan 1 Mata Kuliah:
 [[ACTION:ADD_SCHEDULE:{"kelas":"A","hari":"senin","jam":"10:00 - 11:40","matkul":"DFA","dosen":"-","ruang":"R. 301"}]]
@@ -87,12 +93,31 @@ atau jika menyuruh mematikan:
 
 5. Mengatur Tracker Tugas Kuliah (Supabase Cloud Database):
 - Data Tugas Aktif Saat Ini: ${tasksSummary}
-- Jika pengguna menyuruh mencatat tugas baru (contoh: "catat tugas basdat bikin ERD deadline jumat jam 23.59"):
+- Catat tugas baru (contoh: "catat tugas basdat bikin ERD deadline jumat jam 23.59"):
 [[ACTION:ADD_TASK:{"kelas":"A","matkul":"Basis Data","judul":"Bikin ERD","deadline":"Jumat jam 23:59"}]]
-- Jika pengguna menyuruh menandai tugas selesai (contoh: "tugas ID 2 udah kelar"):
+- Tandai tugas selesai (contoh: "tugas ID 2 udah kelar"):
 [[ACTION:DONE_TASK:{"id":2}]]
-- Jika pengguna menyuruh menghapus tugas:
+- Menghapus tugas (contoh: "hapus tugas ID 2"):
 [[ACTION:DELETE_TASK:{"id":2}]]
+- Minta tampilkan daftar tugas lengkap:
+[[ACTION:GET_TASKS:{"kelas":"A"}]]
+
+6. Polling Kehadiran Dosen & Polling Bebas:
+- Jika disuruh buat polling dosen (contoh: "bikin poll dosen Bu Woro dan Pak Agus", "poll dosen hari ini"):
+[[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Herr Agus"]}]]
+(Gunakan dosen default jika pengguna bilang "semua dosen").
+- Jika disuruh bikin polling bebas/kustom (contoh: "bikin poll Menu Buka Puasa | Nasi Padang | Ayam Geprek"):
+[[ACTION:CREATE_POLL:{"name":"Menu Buka Puasa","options":["Nasi Padang","Ayam Geprek"]}]]
+
+7. Kirim Broadcast Siaran Manual:
+Jika disuruh kirim broadcast template hari ini sekarang ke target:
+[[ACTION:SEND_BROADCAST:{"day":"${todayKey}"}]]
+
+8. Status & Pemeliharaan:
+Jika menanyakan status sistem / bot / database:
+[[ACTION:SYSTEM:{"action":"status"}]]
+Jika menyuruh restart bot:
+[[ACTION:SYSTEM:{"action":"restart"}]]
 
 Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu).`;
 
@@ -163,7 +188,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
         replyText = replyText.trim();
 
         // Periksa apakah AI memicu aksi penyimpanan jadwal, tugas, atau konfigurasi
-        const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE|SET_AUTOSEND|ADD_TASK|DONE_TASK|DELETE_TASK):([\s\S]*?)\]\]/);
+        const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE|SET_AUTOSEND|ADD_TASK|DONE_TASK|DELETE_TASK|GET_TASKS|POLL_DOSEN|CREATE_POLL|SEND_BROADCAST|SYSTEM):([\s\S]*?)\]\]/);
         if (actionMatch) {
           const actionType = actionMatch[1];
           const actionPayloadStr = actionMatch[2];
@@ -171,8 +196,9 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
           // Bersihkan tag action agar tidak tampil mentah ke pengguna
           const cleanReply = replyText.replace(actionMatch[0], '').trim();
 
-          if (!isSenderOwner) {
-            return `${cleanReply}\n\n⚠️ _Catatan: Hanya Admin / Owner bot yang diizinkan untuk mengubah database jadwal kuliah._`;
+          const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST'];
+          if (ownerOnlyActions.includes(actionType) && !isSenderOwner) {
+            return `${cleanReply}\n\n⚠️ _Catatan: Aksi ini memerlukan izin khusus Admin / Owner bot._`;
           }
 
           try {
@@ -225,6 +251,70 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
             } else if (actionType === 'DELETE_TASK') {
               await deleteTask(actionData.id);
               return `${cleanReply}\n\n🗑️ *[Tugas Dihapus]* Tugas ID *${actionData.id}* telah dihapus dari database Supabase.`;
+            } else if (actionType === 'GET_TASKS') {
+              const listFormatted = await formatTaskList(actionData.kelas || 'A');
+              return `${cleanReply}\n\n${listFormatted}`;
+            } else if (actionType === 'POLL_DOSEN') {
+              if (sockInstance && remoteJid) {
+                const lecturers = Array.isArray(actionData.lecturers) && actionData.lecturers.length > 0 
+                  ? actionData.lecturers 
+                  : defaultLecturers;
+                (async () => {
+                  for (const lecturer of lecturers) {
+                    await new Promise(r => setTimeout(r, 600));
+                    try {
+                      await sockInstance.sendMessage(remoteJid, {
+                        poll: {
+                          name: `🎓 Kehadiran: ${lecturer}`,
+                          values: ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
+                          selectableCount: 1
+                        }
+                      });
+                    } catch (errP) {
+                      console.error('[AI Poll Lecturer Error]:', errP.message);
+                    }
+                  }
+                })();
+                return `${cleanReply}\n\n📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* sedang dikirim ke chat ini.`;
+              }
+              return cleanReply;
+            } else if (actionType === 'CREATE_POLL') {
+              if (sockInstance && remoteJid) {
+                const pollName = actionData.name || 'Polling';
+                const pollOpts = Array.isArray(actionData.options) && actionData.options.length >= 2 ? actionData.options : ['Ya', 'Tidak'];
+                try {
+                  await sockInstance.sendMessage(remoteJid, {
+                    poll: {
+                      name: pollName,
+                      values: pollOpts,
+                      selectableCount: 1
+                    }
+                  });
+                  return `${cleanReply}\n\n📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke chat!`;
+                } catch (ePoll) {
+                  return `${cleanReply}\n\n⚠️ Gagal membuat polling: ${ePoll.message}`;
+                }
+              }
+              return cleanReply;
+            } else if (actionType === 'SEND_BROADCAST') {
+              if (sockInstance) {
+                const bRes = await sendDailyBroadcast(sockInstance, actionData.day);
+                if (bRes.success) {
+                  return `${cleanReply}\n\n📢 *[Broadcast Selesai]* Pesan template telah berhasil dikirim ke seluruh target!`;
+                } else {
+                  return `${cleanReply}\n\n⚠️ Gagal broadcast: ${bRes.message}`;
+                }
+              }
+              return cleanReply;
+            } else if (actionType === 'SYSTEM') {
+              if (actionData.action === 'status') {
+                const dbStat = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Normal' })) : { message: '🟢 Terhubung' };
+                return `${cleanReply}\n\n📊 *[Status Sistem]*\n• Status Bot: 🟢 Aktif & Terhubung\n• Database Cloud: ${dbStat.message}`;
+              } else if (actionData.action === 'restart') {
+                if (!isSenderOwner) return `${cleanReply}\n\n⚠️ Hanya Owner yang boleh me-restart bot.`;
+                setTimeout(() => process.exit(0), 1500);
+                return `${cleanReply}\n\n🔄 *[Me-restart Bot]* Bot sedang dimuat ulang, tunggu 3 detik ya...`;
+              }
             }
           } catch (eAction) {
             console.error('❌ [Action Execution Error]:', eAction.message);

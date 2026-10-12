@@ -228,10 +228,45 @@ async function formatTaskList(classKey = 'A') {
   return output.trim();
 }
 
+/**
+ * Memeriksa status koneksi langsung ke Supabase Cloud Database
+ */
+async function checkDatabaseStatus() {
+  const start = Date.now();
+  try {
+    const res = await fetchSupabase('tasks?select=id&limit=1');
+    const latency = Date.now() - start;
+    if (res && res.ok) {
+      return {
+        connected: true,
+        type: 'Supabase Cloud (PostgreSQL)',
+        latencyMs: latency,
+        message: `🟢 Terhubung (Supabase Cloud ${latency}ms)`
+      };
+    } else {
+      return {
+        connected: false,
+        type: 'Local Cache (tasks.json)',
+        latencyMs: latency,
+        message: `🟡 Offline / HTTP ${res.status} (Fallback Cache Lokal)`
+      };
+    }
+  } catch (err) {
+    return {
+      connected: false,
+      type: 'Local Cache (tasks.json)',
+      latencyMs: Date.now() - start,
+      message: `🔴 Terputus (Fallback Cache Lokal)`
+    };
+  }
+}
+
 module.exports = {
   getTasks,
   addTask,
   markTaskDone,
   deleteTask,
-  formatTaskList
+  formatTaskList,
+  checkDatabaseStatus
 };
+

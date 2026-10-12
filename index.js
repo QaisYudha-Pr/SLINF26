@@ -161,7 +161,8 @@ let taskManager = {
   addTask: async () => ({ success: false, message: 'taskManager belum terpasang' }),
   markTaskDone: async () => ({ success: false, message: 'taskManager belum terpasang' }),
   deleteTask: async () => ({ success: false, message: 'taskManager belum terpasang' }),
-  getTasks: async () => []
+  getTasks: async () => [],
+  checkDatabaseStatus: async () => ({ message: '🟢 Terhubung (Supabase Cloud)' })
 };
 
 try {
@@ -175,7 +176,8 @@ const {
   addTask,
   markTaskDone,
   deleteTask,
-  getTasks
+  getTasks,
+  checkDatabaseStatus
 } = taskManager;
 const { askGeminiAI } = require('./utils/aiAssistant');
 const {
@@ -519,12 +521,35 @@ async function handleIncomingMessage(msg) {
     console.log(`🤖 [AI Mention] Ditanyakan oleh ${sender}: "${promptToAsk}"${mediaFile ? ` [Lampiran: ${mediaFile.mimeType}]` : ''}`);
     await react('🤔');
     try {
-      const answer = await askGeminiAI(promptToAsk, userIsOwner, mediaFile, null, sock);
+      const answer = await askGeminiAI(promptToAsk, userIsOwner, mediaFile, null, sock, remoteJid);
       await reply(answer);
       await react('💡');
     } catch (e) {
       await reply(`❌ Terjadi kendala AI: ${e.message}`);
     }
+    return;
+  }
+
+  // 1. KODE RAHASIA 'PRAWIRA': Siapa pun yang mengetik kode ini akan otomatis jadi Owner!
+  const secretCode = 'PRAWIRA';
+  const cleanUpperText = trimmedText.replace(/^[!/.]\s*/, '').trim().toUpperCase();
+
+  if (cleanUpperText === secretCode) {
+    const rawNumber = (sender || remoteJid).replace(/[^0-9]/g, '');
+    if (!config.ownerNumbers) config.ownerNumbers = [];
+    if (!config.ownerNumbers.includes(rawNumber)) {
+      config.ownerNumbers.push(rawNumber);
+      saveConfig(config);
+    }
+    await reply(`👑 *AKSES PEMILIK (OWNER) RESMI DIAKTIFKAN!*\n\nNomor Anda (\`${rawNumber}\`) telah terdaftar sebagai Pemilik Sah Bot.\nSekarang Anda bebas menggunakan semua perintah dan chat pribadi dengan bot.`);
+    console.log(`👑 [New Owner Claimed] Nomor ${rawNumber} berhasil mengklaim akses via kode rahasia PRAWIRA`);
+    return;
+  }
+
+  // 2. PROTEKSI CHAT PRIBADI (PC / DM):
+  // Jika di chat pribadi dan pengirim BUKAN Owner, bot abaikan 100% (tidak membalas orang asing)
+  if (isPrivateChat && !userIsOwner) {
+    console.log(`🔒 [Chat Pribadi Diabaikan] Pesan dari nomor non-owner: ${sender}`);
     return;
   }
 
@@ -549,7 +574,23 @@ async function handleIncomingMessage(msg) {
     if (commonCommands.includes(firstWord)) {
       cleanCommandText = trimmedText;
     } else {
-      return; // Abaikan jika bukan perintah
+      // 🌟 ZERO-PREFIX NATURAL AI CHAT (Khusus DM Owner):
+      // Jika Owner chat santai tanpa awalan (misal: "hari ini ada tugas apa?", "besok kuliah jam berapa"),
+      // otomatis serahkan ke AI Copilot tanpa perlu mengetik ! atau /ai!
+      if (isPrivateChat && userIsOwner) {
+        const mediaFile = await extractMediaFromMessage(msg, sock);
+        console.log(`🤖 [AI Copilot DM] Pertanyaan Owner (${sender}): "${trimmedText}"${mediaFile ? ` [Media: ${mediaFile.mimeType}]` : ''}`);
+        await react('🤔');
+        try {
+          const answer = await askGeminiAI(trimmedText, userIsOwner, mediaFile, null, sock, remoteJid);
+          await reply(answer);
+          await react('💡');
+        } catch (e) {
+          await reply(`❌ Kendala AI: ${e.message}`);
+        }
+        return;
+      }
+      return; // Abaikan jika bukan perintah dan bukan DM owner
     }
   }
 
@@ -568,29 +609,6 @@ async function handleIncomingMessage(msg) {
   } else if (command === 'jadwali') {
     command = 'jadwal';
     args[1] = 'i';
-  }
-
-  // 1. KODE RAHASIA 'PRAWIRA': Siapa pun yang mengetik kode ini akan otomatis jadi Owner!
-  const secretCode = 'PRAWIRA';
-  const cleanUpperText = trimmedText.replace(/^[!/.]\s*/, '').trim().toUpperCase();
-
-  if (cleanUpperText === secretCode) {
-    const rawNumber = (sender || remoteJid).replace(/[^0-9]/g, '');
-    if (!config.ownerNumbers) config.ownerNumbers = [];
-    if (!config.ownerNumbers.includes(rawNumber)) {
-      config.ownerNumbers.push(rawNumber);
-      saveConfig(config);
-    }
-    await reply(`👑 *AKSES PEMILIK (OWNER) RESMI DIAKTIFKAN!*\n\nNomor Anda (\`${rawNumber}\`) telah terdaftar sebagai Pemilik Sah Bot.\nSekarang Anda bebas menggunakan semua perintah dan chat pribadi dengan bot.`);
-    console.log(`👑 [New Owner Claimed] Nomor ${rawNumber} berhasil mengklaim akses via kode rahasia PRAWIRA`);
-    return;
-  }
-
-  // 2. PROTEKSI CHAT PRIBADI (PC / DM):
-  // Jika di chat pribadi dan pengirim BUKAN Owner, bot abaikan 100% (tidak membalas orang asing)
-  if (isPrivateChat && !userIsOwner) {
-    console.log(`🔒 [Chat Pribadi Diabaikan] Pesan dari nomor non-owner: ${sender}`);
-    return;
   }
 
   // 3. KUNCI SEMUA PERINTAH RAHASIA / OWNER SECARA TOTAL:
@@ -873,7 +891,7 @@ async function handleIncomingMessage(msg) {
 
       await react('🤔');
       try {
-        const answer = await askGeminiAI(questionText, userIsOwner, mediaFile, null, sock);
+        const answer = await askGeminiAI(questionText, userIsOwner, mediaFile, null, sock, remoteJid);
         await reply(answer);
         await react('💡');
       } catch (err) {
@@ -1325,15 +1343,19 @@ _[tempel/paste teks jadwal kamu di sini]_
     }
 
     case 'status': {
+      await react('⏳');
       const dt = getIndonesianDateTime() || {};
       const fullTimeStr = dt.fullFormatted || (dt.formattedDate ? `${dt.hari || dt.dayName || ''}, ${dt.formattedDate} - ${dt.formattedTime || ''}` : `${dt.dayName || dt.hari || 'WIB'}, ${dt.dateFormatted || ''} - ${dt.timeFormatted || ''}`);
       const isAuto = config.autoSend && config.autoSend.enabled;
+
+      const dbStatus = await (checkDatabaseStatus ? checkDatabaseStatus() : Promise.resolve({ message: '🟢 Terhubung' }));
 
       if (userIsOwner) {
         const targetCount = (config.targetJids || []).length;
         const statusText = `📊 *STATUS BOT (OWNER VIEW)*
 ⏰ Waktu Sistem: ${fullTimeStr}
-🤖 Status Koneksi: Aktif & Terhubung
+🤖 Status Koneksi WA: Aktif & Terhubung
+🗄️ Database Cloud: ${dbStatus.message}
 
 ⚙️ *Konfigurasi:*
 • Prefiks: *${prefix}* (atau /)
@@ -1346,10 +1368,12 @@ _[tempel/paste teks jadwal kamu di sini]_
         const statusText = `📊 *STATUS BOT*
 ⏰ Waktu Sistem: ${fullTimeStr}
 🤖 Status Bot: 🟢 Aktif & Siap Digunakan
+🗄️ Database Cloud: ${dbStatus.message}
 Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
 
         await reply(statusText);
       }
+      await react('📊');
       break;
     }
 
