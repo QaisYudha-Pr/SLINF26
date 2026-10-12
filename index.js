@@ -1427,11 +1427,28 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
       ];
 
       try {
-        // 1. Buat folder backup lokal jika belum ada
+        // 1. Ambil ringkasan commit terbaru dari GitHub API
+        let latestCommitInfo = '';
+        try {
+          const commitRes = await fetch('https://api.github.com/repos/QaisYudha-Pr/SLINF26/commits?per_page=1', {
+            headers: { 'User-Agent': 'WhatsApp-Bot' },
+            signal: AbortSignal.timeout(6000)
+          });
+          if (commitRes.ok) {
+            const commitData = await commitRes.json();
+            if (Array.isArray(commitData) && commitData[0]) {
+              const sha = (commitData[0].sha || '').slice(0, 7);
+              const msg = (commitData[0].commit?.message || '-').split('\n')[0];
+              latestCommitInfo = `\n📌 *Commit Terbaru:* \`${sha}\`\n📝 *Pembaruan:* _${msg}_\n`;
+            }
+          }
+        } catch (eCommit) {}
+
+        // 2. Buat folder backup lokal jika belum ada
         const backupDir = path.join(__dirname, 'backup');
         if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
-        // 2. Download file-file secara paralel via native fetch (cepat & hemat RAM)
+        // 3. Download file-file secara paralel via native fetch (cepat & hemat RAM)
         const downloads = await Promise.all(
           filesToUpdate.map(async (fileRelPath) => {
             const res = await fetch(`${repoRawUrl}${fileRelPath}?t=${Date.now()}`, {
@@ -1457,7 +1474,23 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
           }
         }
 
-        // 3. Cadangkan (backup) file yang ada saat ini sebelum ditimpa
+        // 4. Deteksi file mana saja yang mengalami perubahan nyata
+        const changedFiles = [];
+        for (const item of downloads) {
+          const targetPath = path.join(__dirname, item.fileRelPath);
+          let isDifferent = true;
+          if (fs.existsSync(targetPath)) {
+            const existingContent = fs.readFileSync(targetPath, 'utf-8');
+            if (existingContent === item.content) {
+              isDifferent = false;
+            }
+          }
+          if (isDifferent) {
+            changedFiles.push(item.fileRelPath);
+          }
+        }
+
+        // 5. Cadangkan (backup) file yang ada saat ini sebelum ditimpa
         for (const item of downloads) {
           const targetPath = path.join(__dirname, item.fileRelPath);
           const backupPath = path.join(backupDir, path.basename(item.fileRelPath));
@@ -1472,7 +1505,7 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
           fs.copyFileSync(schedPath, path.join(backupDir, 'schedules_backup.json'));
         }
 
-        // 4. Tulis file-file baru ke disk
+        // 6. Tulis file-file baru ke disk
         for (const item of downloads) {
           const targetPath = path.join(__dirname, item.fileRelPath);
           const targetDir = path.dirname(targetPath);
@@ -1480,19 +1513,37 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
           fs.writeFileSync(targetPath, item.content, 'utf-8');
         }
 
-        // 5. Simpan catatan notifikasi agar saat bot menyala lagi langsung kirim konfirmasi ke WA
+        // 7. Buat teks laporan detail pembaruan (Changelog Notification)
+        const dtNow = getIndonesianDateTime();
+        const filesListText = changedFiles.length > 0 
+          ? changedFiles.map(f => `• ✅ \`${f}\``).join('\n')
+          : '• ✨ Seluruh file sudah sinkron dengan versi terbaru GitHub.';
+
+        const customNotice = 
+`🚀 *[UPDATE SELESAI & BOT AKTIF KEMBALI]*
+━━━━━━━━━━━━━━━━━━━━${latestCommitInfo}
+📂 *File yang Diperbarui (${changedFiles.length} file):*
+${filesListText}
+
+⏰ *Waktu Update:* ${dtNow.timeFormatted || 'WIB'}
+🤖 Seluruh fitur dan perbaikan terbaru telah aktif siap digunakan!`;
+
+        // Simpan catatan notifikasi agar saat bot menyala langsung kirim laporan lengkap ke WA
         try {
           const noticeFile = path.join(__dirname, '.restart_notice.json');
           fs.writeFileSync(noticeFile, JSON.stringify({
             targetJid: remoteJid,
             requestedBy: sender,
             timestamp: Date.now(),
-            customMessage: '🚀 *[UPDATE SELESAI]*\nSeluruh file bot telah berhasil diperbarui ke versi terbaru dari GitHub! Bot siap digunakan kembali.'
+            customMessage: customNotice
           }, null, 2), 'utf-8');
         } catch (e) {}
 
         await react('✅');
-        await reply('✅ *PEMBARUAN BERHASIL!*\n\nSemua file kode inti telah disinkronkan ke versi terbaru dari GitHub.\nBot akan me-restart secara otomatis dalam 2 detik agar kode baru aktif...');
+        const updateSummary = changedFiles.length > 0 
+          ? `Terdeteksi *${changedFiles.length} file* diperbarui.\n${latestCommitInfo ? `${latestCommitInfo}\n` : ''}`
+          : 'Semua file sudah berada pada versi paling mutakhir.\n';
+        await reply(`✅ *PEMBARUAN BERHASIL!*\n\n${updateSummary}Bot akan me-restart otomatis dalam 2 detik dan mengirim laporan lengkap saat aktif kembali...`);
 
         setTimeout(() => {
           process.exit(0);
