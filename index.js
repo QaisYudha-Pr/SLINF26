@@ -564,7 +564,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task'];
+  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -599,8 +599,10 @@ async function handleIncomingMessage(msg) {
   let command = (args[0] || '').toLowerCase();
   const query = cleanCommandText.slice(command.length).trim();
 
-  // Toleransi typo otomatis
-  if (command === 'jadwala') {
+  // Toleransi typo / alias otomatis
+  if (command === 'pollall' || ((command === 'poll' || command === 'polling' || command === 'dosen') && (args[1] || '').toLowerCase() === 'all' && !query.includes('|') && args.length === 2)) {
+    command = 'all';
+  } else if (command === 'jadwala') {
     command = 'jadwal';
     args[1] = 'a';
   } else if (command === 'jadwalb') {
@@ -703,7 +705,8 @@ async function handleIncomingMessage(msg) {
       break;
     }
 
-    case 'all': {
+    case 'all':
+    case 'pollall': {
       let lecturers = [];
 
       if (!query) {

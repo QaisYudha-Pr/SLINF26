@@ -103,9 +103,9 @@ atau jika menyuruh mematikan:
 [[ACTION:GET_TASKS:{"kelas":"A"}]]
 
 6. Polling Kehadiran Dosen & Polling Bebas:
-- Jika disuruh buat polling dosen (contoh: "bikin poll dosen Bu Woro dan Pak Agus", "poll dosen hari ini"):
-[[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Herr Agus"]}]]
-(Gunakan dosen default jika pengguna bilang "semua dosen").
+- Jika disuruh buat polling dosen (contoh: "poll all", "poll semua dosen", "bikin poll dosen Bu Woro"):
+[[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Frau Wisma","Frau Lita","Herr Agus"]}]]
+(Gunakan seluruh dosen default ${defaultLecturers.join(', ')} jika pengguna meminta "poll all" atau "semua dosen").
 - Jika disuruh bikin polling bebas/kustom (contoh: "bikin poll Menu Buka Puasa | Nasi Padang | Ayam Geprek"):
 [[ACTION:CREATE_POLL:{"name":"Menu Buka Puasa","options":["Nasi Padang","Ayam Geprek"]}]]
 
