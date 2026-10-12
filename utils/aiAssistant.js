@@ -15,12 +15,39 @@ const { addTask, markTaskDone, deleteTask, getTasks, formatTaskList, checkDataba
 const { loadConfig, saveConfig } = require('../configManager');
 const { startScheduler, stopScheduler, sendDailyBroadcast } = require('../scheduler');
 
+// Map memori percakapan: Map<sessionId, { lastActive: number, turns: Array<{ role: string, text: string }> }>
+const sessionMap = new Map();
+
+// Pembersih otomatis sesi percakapan yang kadaluarsa (TTL 10 menit)
+setInterval(() => {
+  const now = Date.now();
+  const TTL = 10 * 60 * 1000;
+  for (const [id, s] of sessionMap.entries()) {
+    if (now - s.lastActive > TTL) sessionMap.delete(id);
+  }
+}, 5 * 60 * 1000);
+
+/**
+ * Menghapus/me-reset ingatan riwayat obrolan AI
+ */
+function resetSession(sessionId) {
+  if (sessionId) {
+    sessionMap.delete(sessionId);
+    for (const key of sessionMap.keys()) {
+      if (key.includes(sessionId)) sessionMap.delete(key);
+    }
+    return true;
+  }
+  return false;
+}
+
 /**
  * Mengirim pertanyaan ke Google Gemini AI (gemini-3.8-flash)
- * Dilengkapi kemampuan multimodal, auto-save jadwal kuliah, database tugas Supabase, dan auto-poll.
+ * Dilengkapi kemampuan multimodal, contextual memory, proactive clarification, dan action copilot.
  */
-async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null, customApiKey = null, sockInstance = null, remoteJid = null) {
+async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null, customApiKey = null, sockInstance = null, remoteJid = null, senderJid = null) {
   const config = loadConfig();
+
   const apiKey = customApiKey || config.geminiApiKey || process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -119,6 +146,14 @@ Jika menanyakan status sistem / bot / database:
 Jika menyuruh restart bot:
 [[ACTION:SYSTEM:{"action":"restart"}]]
 
+9. KEMAMPUAN MEMORI & KLARIFIKASI PERCAKAPAN:
+- Kamu memiliki daya ingat (riwayat beberapa pesan terakhir) dengan pengguna.
+- Jika pengguna memberikan instruksi yang kurang lengkap, ambigu, atau merujuk ke data/obrolan sebelumnya (contoh: "tolong tambahkan data ini ke database", "jadwalnya tolong diganti", "masukin data tadi"):
+  • CEK konteks riwayat percakapan di atas.
+  • Jika konteksnya SUDAH PASTI dan jelas dari riwayat sebelumnya, langsung jalankan aksi database yang diminta!
+  • Jika konteksnya MASIH BELUM PASTI / BISA BERMAKNA GANDA (misalnya di riwayat ada jadwal dan ada tugas, atau kelasnya belum disebut), JANGAN MENEBAK ASAL. AJUKAN PERTANYAAN KLARIFIKASI terlebih dahulu secara santai dan ramah (contoh: "Siap kak! Maksud kamu mau memasukkan data *Jadwal Kuliah* atau *Tugas Kuliah* nih?").
+  • Begitu pengguna mengonfirmasi/mengklarifikasi, segera hubungkan konteksnya dan eksekusi action tag yang tepat!
+
 Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu).`;
 
   const models = [
@@ -128,9 +163,34 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
     'models/gemini-3.8-flash'
   ];
 
-  // Siapkan parts konten (teks + media jika ada)
-  const parts = [
-    { text: `${systemInstruction}\n\nPertanyaan/Instruksi Pengguna: "${userQuestion || 'Tolong analisis dan simpulkan isi file dokumen/foto ini secara lengkap dan jelas.'}"` }
+  // Identifikasi sesi chat (per user di DM, atau per user-group di grup)
+  const sessionId = (remoteJid && remoteJid.endsWith('@g.us'))
+    ? `${remoteJid}:${senderJid || 'user'}`
+    : (remoteJid || senderJid || 'default');
+
+  const now = Date.now();
+  const TTL = 10 * 60 * 1000;
+  let session = sessionMap.get(sessionId);
+  if (!session || (now - session.lastActive > TTL)) {
+    session = { lastActive: now, turns: [] };
+  }
+  session.lastActive = now;
+
+  // Bangun array contents (riwayat chat terdahulu + chat saat ini)
+  const contents = [];
+
+  if (session.turns && session.turns.length > 0) {
+    for (const turn of session.turns) {
+      contents.push({
+        role: turn.role,
+        parts: [{ text: turn.text }]
+      });
+    }
+  }
+
+  // Siapkan parts konten pesan pengguna saat ini
+  const currentParts = [
+    { text: `[INSTRUKSI SISTEM & KONTEKS BOT]:\n${systemInstruction}\n\n[PESAN PENGGUNA]:\n${userQuestion || 'Tolong analisis dan simpulkan isi file dokumen/foto ini secara lengkap dan jelas.'}` }
   ];
 
   if (mediaFile && mediaFile.buffer) {
@@ -146,7 +206,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
 
     console.log(`📄 [AI Multimodal] Memproses lampiran ${detectedMime} (${Math.round(mediaFile.buffer.length / 1024)} KB)...`);
 
-    parts.push({
+    currentParts.push({
       inlineData: {
         mimeType: detectedMime,
         data: mediaFile.buffer.toString('base64')
@@ -154,14 +214,14 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
     });
   }
 
+  contents.push({
+    role: "user",
+    parts: currentParts
+  });
+
   // Bangun payload sekali di luar loop agar hemat CPU dan RAM
   const payloadStr = JSON.stringify({
-    contents: [
-      {
-        role: "user",
-        parts
-      }
-    ],
+    contents,
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens: 3072
@@ -320,8 +380,29 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
           } catch (eAction) {
             console.error('❌ [Action Execution Error]:', eAction.message);
           }
+
+          // Simpan percakapan ke memori sesi (hanya teks murni)
+          try {
+            session.turns.push({ role: 'user', text: userQuestion || '(mengirim lampiran)' });
+            session.turns.push({ role: 'model', text: cleanReply });
+            if (session.turns.length > 6) {
+              session.turns = session.turns.slice(-6);
+            }
+            sessionMap.set(sessionId, session);
+          } catch (eMem) {}
+
           return cleanReply;
         }
+
+        // Simpan percakapan reguler ke memori sesi
+        try {
+          session.turns.push({ role: 'user', text: userQuestion || '(mengirim lampiran)' });
+          session.turns.push({ role: 'model', text: replyText });
+          if (session.turns.length > 6) {
+            session.turns = session.turns.slice(-6);
+          }
+          sessionMap.set(sessionId, session);
+        } catch (eMem) {}
 
         return replyText;
       } else {
@@ -337,5 +418,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
 }
 
 module.exports = {
-  askGeminiAI
+  askGeminiAI,
+  resetSession
 };
+

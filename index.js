@@ -179,7 +179,7 @@ const {
   getTasks,
   checkDatabaseStatus
 } = taskManager;
-const { askGeminiAI } = require('./utils/aiAssistant');
+const { askGeminiAI, resetSession } = require('./utils/aiAssistant');
 const {
   sendDailyBroadcast,
   startScheduler,
@@ -524,7 +524,7 @@ async function handleIncomingMessage(msg) {
     console.log(`🤖 [AI Mention] Ditanyakan oleh ${sender}: "${promptToAsk}"${mediaFile ? ` [Lampiran: ${mediaFile.mimeType}]` : ''}`);
     await react('🤔');
     try {
-      const answer = await askGeminiAI(promptToAsk, userIsOwner, mediaFile, null, sock, remoteJid);
+      const answer = await askGeminiAI(promptToAsk, userIsOwner, mediaFile, null, sock, remoteJid, sender);
       await reply(answer);
       await react('💡');
     } catch (e) {
@@ -567,7 +567,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task'];
+  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task', 'reset', 'clear'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -585,7 +585,7 @@ async function handleIncomingMessage(msg) {
         console.log(`🤖 [AI Copilot DM] Pertanyaan Owner (${sender}): "${trimmedText}"${mediaFile ? ` [Media: ${mediaFile.mimeType}]` : ''}`);
         await react('🤔');
         try {
-          const answer = await askGeminiAI(trimmedText, userIsOwner, mediaFile, null, sock, remoteJid);
+          const answer = await askGeminiAI(trimmedText, userIsOwner, mediaFile, null, sock, remoteJid, sender);
           await reply(answer);
           await react('💡');
         } catch (e) {
@@ -637,62 +637,209 @@ async function handleIncomingMessage(msg) {
   switch (command) {
     case 'menu':
     case 'help': {
-      let menuText = 
-`╭───「 🤖 *MENU BOT WHATSAPP* 」
+      const subMenu = (args[1] || '').toLowerCase();
+
+      if (subMenu === 'jadwal') {
+        const text = 
+`╭───「 📚 *MENU JADWAL KULIAH* 」
+│ Prefiks: *${prefix}* atau */*
+╰──────────────────────────
+• *${prefix}jadwal a* ➔ Jadwal Kelas A hari ini
+• *${prefix}jadwal b* ➔ Jadwal Kelas B hari ini
+• *${prefix}jadwal i* ➔ Jadwal Kelas I hari ini
+• *${prefix}jadwal <kelas> <hari>* ➔ Cek jadwal per hari (cth: *${prefix}jadwal a senin*)
+• *${prefix}scanjadwal* ➔ Balas/kirim foto jadwal kuliah untuk auto-scan AI
+
+💡 _Tips AI: Anda juga bisa tanya AI langsung: "${prefix}ai jadwal kelas A hari ini ada apa aja?"_`;
+        await reply(text);
+        break;
+      }
+
+      if (subMenu === 'tugas' || subMenu === 'task') {
+        const text = 
+`╭───「 📝 *MENU TUGAS (SUPABASE)* 」
+│ Prefiks: *${prefix}* atau */*
+╰──────────────────────────
+• *${prefix}tugas* ➔ Tampilkan semua tugas aktif (pending)
+• *${prefix}tugas a* / *${prefix}tugas b* ➔ Cek daftar tugas per kelas
+• *${prefix}tugas tambah <matkul> | <judul> | <deadline>* ➔ Catat tugas baru
+  _Contoh: ${prefix}tugas tambah Basis Data | ERD Toko Online | Jumat 23:59_
+• *${prefix}tugas done <ID>* ➔ Tandai tugas telah selesai
+• *${prefix}tugas hapus <ID>* ➔ Hapus tugas dari database
+
+💡 _Tips AI: Bisa juga suruh AI: "${prefix}ai catat tugas Matdis latihan bab 3 deadline senin"_`;
+        await reply(text);
+        break;
+      }
+
+      if (subMenu === 'poll' || subMenu === 'polling') {
+        const text = 
+`╭───「 📊 *MENU POLLING KEHADIRAN* 」
+│ Prefiks: *${prefix}* atau */*
+╰──────────────────────────
+• *${prefix}all* ➔ Buat polling semua dosen default hari ini
+• *${prefix}all <d1, d2, ..>* ➔ Polling dosen kustom
+• *${prefix}dosen <nama>* ➔ Polling 1 nama dosen spesifik
+• *${prefix}poll <judul>|<opsi1>|<opsi2>* ➔ Buat polling bebas
+• *${prefix}listdosen* ➔ Lihat daftar nama dosen default`;
+        await reply(text);
+        break;
+      }
+
+      if (subMenu === 'ai' || subMenu === 'copilot') {
+        const text = 
+`╭───「 🤖 *MENU ASISTEN GEMINI AI* 」
+│ Prefiks: *${prefix}* atau */*
+╰──────────────────────────
+• *${prefix}ai <pertanyaan>* ➔ Tanya apa saja ke Gemini AI
+• *@Bot <pertanyaan>* ➔ Tag bot di grup untuk langsung dijawab
+• *${prefix}reset* ➔ Reset ingatan riwayat obrolan AI
+• *Kirim Foto/PDF + ${prefix}ai* ➔ Menganalisis & merangkum dokumen
+
+⚡ *Memori & Klarifikasi Otomatis*:
+AI mengingat konteks obrolan hingga 10 menit. Jika perintah Anda belum jelas/ambigu, AI akan ramah bertanya konfirmasi sebelum mengubah data!
+
+👑 *Khusus Chat Pribadi (DM) Owner*:
+Bisa langsung chat santai tanpa mengetik tanda prefiks!`;
+        await reply(text);
+        break;
+      }
+
+      if (subMenu === 'owner' || subMenu === 'admin') {
+        if (!userIsOwner) {
+          await reply(`⛔ Menu ini hanya dapat diakses oleh Owner bot.`);
+          break;
+        }
+        const text = 
+`╭───「 👑 *MENU KONTROL OWNER* 」
+│ Prefiks: *${prefix}* atau */*
+╰──────────────────────────
+• *${prefix}status* ➔ Cek status bot, uptime, & latency database
+• *${prefix}targets* ➔ Daftar grup/saluran tujuan siaran
+• *${prefix}addtarget <id>* ➔ Tambah target tujuan siaran
+• *${prefix}addlink <link>* ➔ Tambah saluran via tautan invite
+• *${prefix}deltarget <id>* ➔ Hapus target dari daftar
+• *${prefix}send [hari]* ➔ Kirim siaran harian ke semua target
+• *${prefix}autosend <on/off>* ➔ Saklar siaran otomatis (07:00 WIB)
+• *${prefix}setdosen <d1, d2>* ➔ Atur ulang dosen default
+• *${prefix}listowner* ➔ Cek daftar nomor admin/owner
+• *${prefix}tambahkan <no>* ➔ Daftarkan nomor admin baru
+• *${prefix}hapusnomor <no>* ➔ Hapus nomor admin
+• *${prefix}update* ➔ Update otomatis bot dari GitHub & changelog
+• *${prefix}repair* ➔ Cek kesehatan file & self-heal
+• *${prefix}restart* ➔ Me-restart proses bot`;
+        await reply(text);
+        break;
+      }
+
+      if (subMenu === 'all' || subMenu === 'full') {
+        let fullMenuText = 
+`╭───「 🤖 *MENU LENGKAP BOT KAMPUS* 」
 │ Prefiks: *${prefix}* atau */*
 ╰──────────────────────────
 
 🤖 *ASISTEN PINTAR GEMINI AI*
-• *${prefix}ai <pertanyaan>* ➔ Tanya apa saja ke Google Gemini AI
-• *@Bot <pertanyaan>* ➔ Tag bot di grup untuk langsung bertanya
+• *${prefix}ai <pertanyaan>* ➔ Tanya apa saja ke Gemini AI
+• *@Bot <pertanyaan>* ➔ Tag bot di grup untuk bertanya
+• *${prefix}reset* ➔ Bersihkan memori obrolan AI
+
+📚 *JADWAL KULIAH*
+• *${prefix}jadwal a* / *${prefix}jadwal b* / *${prefix}jadwal i* ➔ Jadwal hari ini
+• *${prefix}jadwal <kelas> <hari>* ➔ Cek hari (cth: ${prefix}jadwal a senin)
+• *${prefix}scanjadwal* ➔ Auto-scan foto jadwal via AI
+
+📝 *TRACKER TUGAS (SUPABASE CLOUD)*
+• *${prefix}tugas* ➔ Daftar tugas aktif
+• *${prefix}tugas a* / *${prefix}tugas b* ➔ Filter tugas per kelas
+• *${prefix}tugas tambah <matkul> | <judul> | <deadline>*
+• *${prefix}tugas done <ID>* ➔ Tandai tugas selesai
+• *${prefix}tugas hapus <ID>* ➔ Hapus tugas
 
 📊 *POLLING KEHADIRAN*
 • *${prefix}all* ➔ Poll semua dosen default
 • *${prefix}all <d1, d2, ..>* ➔ Poll dosen kustom
-• *${prefix}dosen <nama>* ➔ Poll 1 nama dosen
+• *${prefix}dosen <nama>* ➔ Poll 1 dosen
 • *${prefix}poll <tanya>|<opsi1>|<opsi2>* ➔ Poll bebas
-
-📚 *JADWAL KULIAH KELAS*
-• *${prefix}jadwal a* ➔ Jadwal Kelas A hari ini
-• *${prefix}jadwal b* ➔ Jadwal Kelas B hari ini
-• *${prefix}jadwal i* ➔ Jadwal Kelas I hari ini
-• *${prefix}jadwal <kelas> <hari>* ➔ Cek hari (cth: ${prefix}jadwal a senin)
-• *${prefix}scanjadwal* ➔ Kirim/balas foto jadwal untuk auto-scan AI
-
-📝 *TRACKER TUGAS (SUPABASE CLOUD)*
-• *${prefix}tugas* ➔ Lihat daftar tugas aktif
-• *${prefix}tugas a* / *${prefix}tugas b* ➔ Cek tugas per kelas
-• *${prefix}tugas tambah <matkul> | <judul> | <deadline>* ➔ Catat tugas
-• *${prefix}tugas done <ID>* ➔ Tandai tugas selesai
-• *${prefix}tugas hapus <ID>* ➔ Hapus tugas
+• *${prefix}listdosen* ➔ Daftar dosen default
 
 📅 *SIARAN & INFORMASI*
-• *${prefix}today* ➔ Pratinjau list hari ini
-• *${prefix}preview <hari>* ➔ Cek list hari (cth: ${prefix}preview senin)
-• *${prefix}list* ➔ Daftar hari template aktif
-• *${prefix}status* ➔ Cek koneksi & waktu bot
-• *${prefix}id* ➔ Cek ID unik grup/saluran ini`;
+• *${prefix}today* ➔ Pratinjau list siaran hari ini
+• *${prefix}preview <hari>* ➔ Cek template per hari
+• *${prefix}status* ➔ Cek status bot & database
+• *${prefix}id* ➔ Cek ID grup / saluran ini`;
 
-      // Menu khusus Owner (hanya tampil jika pengirim adalah Owner sah)
-      if (userIsOwner) {
-        menuText += `\n\n👑 *KONTROL OWNER / ADMIN*
-• *${prefix}send [hari]* ➔ Kirim broadcast ke semua target
-• *${prefix}targets* ➔ Lihat daftar grup/saluran tujuan
-• *${prefix}addlink <link>* ➔ Tambah target via link saluran
-• *${prefix}addtarget <id>* ➔ Tambah target via ID
-• *${prefix}deltarget <id>* ➔ Hapus target dari daftar
-• *${prefix}autosend <on/off>* ➔ Saklar siaran otomatis (07:00)
-• *${prefix}listdosen* ➔ Cek daftar dosen default
-• *${prefix}setdosen <d1, d2>* ➔ Atur ulang dosen default
-• *${prefix}listowner* ➔ Cek daftar nomor admin
-• *${prefix}tambahkan <no>* ➔ Daftarkan nomor admin baru
-• *${prefix}hapusnomor <no>* ➔ Hapus nomor admin
-• *${prefix}repair* ➔ Cek kesehatan & self-heal file
-• *${prefix}update* ➔ Update otomatis bot dari GitHub
-• *${prefix}restart* ➔ Me-restart proses bot`;
+        if (userIsOwner) {
+          fullMenuText += `\n\n👑 *KONTROL OWNER / ADMIN*
+• *${prefix}send [hari]* ➔ Kirim broadcast sekarang
+• *${prefix}targets* ➔ Daftar grup target siaran
+• *${prefix}addlink <link>* / *${prefix}addtarget <id>*
+• *${prefix}deltarget <id>* ➔ Hapus target
+• *${prefix}autosend <on/off>* ➔ Saklar siaran (07:00)
+• *${prefix}setdosen <d1, d2>* ➔ Set dosen default
+• *${prefix}listowner* / *${prefix}tambahkan <no>* / *${prefix}hapusnomor <no>*
+• *${prefix}update* ➔ Update dari GitHub
+• *${prefix}repair* ➔ Self-heal file & DB
+• *${prefix}restart* ➔ Restart proses bot`;
+        }
+        await reply(fullMenuText);
+        break;
       }
 
-      await reply(menuText);
+      // DEFAULT: CAMPUS LIVE DASHBOARD
+      const dt = getIndonesianDateTime();
+      const dayKey = (dt.dayKey || 'senin').toLowerCase();
+      const schedules = getSchedules();
+
+      // Ringkasan jadwal kuliah hari ini
+      const schedA = (schedules?.A?.[dayKey] || []);
+      const schedB = (schedules?.B?.[dayKey] || []);
+      let schedSummary = '';
+      if (schedA.length === 0 && schedB.length === 0) {
+        schedSummary = '🏖️ Tidak ada perkuliahan hari ini (Libur)';
+      } else {
+        const itemsA = schedA.map(s => s.matkul).join(', ') || '-';
+        const itemsB = schedB.map(s => s.matkul).join(', ') || '-';
+        schedSummary = `• Kelas A (${schedA.length} matkul): ${itemsA}\n• Kelas B (${schedB.length} matkul): ${itemsB}`;
+      }
+
+      // Ringkasan tugas aktif
+      let pendingTasksText = 'Ketik !tugas untuk melihat daftar';
+      try {
+        const tasksPromise = getTasks('A', 'pending');
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 1200));
+        const activeTasks = await Promise.race([tasksPromise, timeoutPromise]);
+        if (Array.isArray(activeTasks)) {
+          pendingTasksText = activeTasks.length > 0 
+            ? `📌 *${activeTasks.length} tugas aktif* (Ketik *${prefix}tugas* untuk melihat)`
+            : '🎉 Tidak ada tugas tertunda';
+        }
+      } catch (e) {}
+
+      let dashboardText = 
+`╭───「 🎓 *CAMPUS LIVE DASHBOARD* 」
+│ 📅 *${dt.fullFormatted}*
+│ 🤖 Bot: 🟢 Aktif | AI: ⚡ Multi-turn
+╰──────────────────────────
+
+📚 *KULIAH HARI INI (${dt.dayName}):*
+${schedSummary}
+
+📝 *STATUS TUGAS:*
+${pendingTasksText}
+
+━━━━━━━━━━━━━━━━━━━━
+🧭 *PILIHAN MENU MODULAR:*
+Ketik perintah di bawah untuk membuka menu:
+• *${prefix}menu jadwal* ➔ Jadwal kuliah A/B/I & auto-scan
+• *${prefix}menu tugas*  ➔ Manajemen tugas & deadline
+• *${prefix}menu poll*   ➔ Polling kehadiran dosen
+• *${prefix}menu ai*     ➔ Asisten AI & reset percakapan
+${userIsOwner ? `• *${prefix}menu owner*  ➔ Pengaturan sistem & broadcast\n` : ''}• *${prefix}menu all*    ➔ Tampilkan seluruh menu lengkap
+
+💡 _Atau tanyakan langsung ke AI:_
+_${prefix}ai ada tugas apa aja minggu ini?_`;
+
+      await reply(dashboardText);
       break;
     }
 
@@ -899,18 +1046,25 @@ async function handleIncomingMessage(msg) {
       const questionText = query || (mediaFile ? 'Tolong simpulkan dan analisis isi file ini secara lengkap dan terstruktur.' : '');
 
       if (!questionText && !mediaFile) {
-        await reply(`🤖 *CARA BERTANYA KE AI:*\n\nKetik:\n*${prefix}ai <pertanyaan kamu>*\nAtau kirim/balas file dokumen (PDF) / foto dengan caption *${prefix}ai tolong simpulkan file ini*\n\nContoh:\n• *${prefix}ai apa saja jadwal kelas A hari ini?*\n• *${prefix}ai tolong simpulkan data file PDF ini*\n\n💡 _Di grup, kamu juga bisa langsung tag/mention bot:_ *@Bot <pertanyaan>*`);
+        await reply(`🤖 *CARA BERTANYA KE AI:*\n\nKetik:\n*${prefix}ai <pertanyaan kamu>*\nAtau kirim/balas file dokumen (PDF) / foto dengan caption *${prefix}ai tolong simpulkan file ini*\n\nContoh:\n• *${prefix}ai apa saja jadwal kelas A hari ini?*\n• *${prefix}ai tolong simpulkan data file PDF ini*\n\n💡 _Di grup, kamu juga bisa langsung tag/mention bot:_ *@Bot <pertanyaan>*\n🧹 _Ketik *${prefix}reset* untuk membersihkan memori obrolan AI._`);
         return;
       }
 
       await react('🤔');
       try {
-        const answer = await askGeminiAI(questionText, userIsOwner, mediaFile, null, sock, remoteJid);
+        const answer = await askGeminiAI(questionText, userIsOwner, mediaFile, null, sock, remoteJid, sender);
         await reply(answer);
         await react('💡');
       } catch (err) {
         await reply(`❌ Terjadi kendala AI: ${err.message}`);
       }
+      break;
+    }
+
+    case 'reset':
+    case 'clear': {
+      resetSession(sender || remoteJid);
+      await reply(`🧹 *MEMORI PERCAKAPAN AI DIBERSIHKAN!*\n\nRiwayat konteks obrolan Anda telah direset. Sekarang Anda dapat memulai topik obrolan baru dengan AI.`);
       break;
     }
 
