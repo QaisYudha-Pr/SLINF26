@@ -324,13 +324,19 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                   for (const lecturer of lecturers) {
                     await new Promise(r => setTimeout(r, 600));
                     try {
-                      await sockInstance.sendMessage(remoteJid, {
-                        poll: {
-                          name: `🎓 Kehadiran: ${lecturer}`,
-                          values: ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
-                          selectableCount: 1
-                        }
-                      });
+                      if (remoteJid.endsWith('@newsletter')) {
+                        await sockInstance.sendMessage(remoteJid, {
+                          text: `📊 *🎓 Kehadiran: ${lecturer}*\n━━━━━━━━━━━━━━━━━━━━\n📢 _Beri reaksi emoji pada pesan ini:_\n👍 = *✅ Hadir*\n❌ = *❌ Tidak*\n❓ = *❓ Belum Diketahui*`
+                        });
+                      } else {
+                        await sockInstance.sendMessage(remoteJid, {
+                          poll: {
+                            name: `🎓 Kehadiran: ${lecturer}`,
+                            values: ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
+                            selectableCount: 1
+                          }
+                        });
+                      }
                     } catch (errP) {
                       console.error('[AI Poll Lecturer Error]:', errP.message);
                     }
@@ -344,13 +350,21 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 const pollName = actionData.name || 'Polling';
                 const pollOpts = Array.isArray(actionData.options) && actionData.options.length >= 2 ? actionData.options : ['Ya', 'Tidak'];
                 try {
-                  await sockInstance.sendMessage(remoteJid, {
-                    poll: {
-                      name: pollName,
-                      values: pollOpts,
-                      selectableCount: 1
-                    }
-                  });
+                  if (remoteJid.endsWith('@newsletter')) {
+                    const emojis = ['👍', '❌', '❓', '1️⃣', '2️⃣', '3️⃣', '4️⃣'];
+                    const lines = pollOpts.map((o, idx) => `${emojis[idx] || '▫️'} = *${o}*`).join('\n');
+                    await sockInstance.sendMessage(remoteJid, {
+                      text: `📊 *${pollName}*\n━━━━━━━━━━━━━━━━━━━━\n📢 _Beri reaksi emoji untuk memilih:_\n${lines}`
+                    });
+                  } else {
+                    await sockInstance.sendMessage(remoteJid, {
+                      poll: {
+                        name: pollName,
+                        values: pollOpts,
+                        selectableCount: 1
+                      }
+                    });
+                  }
                   return `${cleanReply}\n\n📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke chat!`;
                 } catch (ePoll) {
                   return `${cleanReply}\n\n⚠️ Gagal membuat polling: ${ePoll.message}`;
