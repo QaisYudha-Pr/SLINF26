@@ -782,6 +782,7 @@ async function handleIncomingMessage(msg) {
 
     // Perintah yang bisa dipicu via @mention di grup
     const mentionTriggerCommands = [
+      'alters', 'about', 'status',
       'all', 'pollall', 'poll', 'polling', 'dosen', 'polldosen',
       'tagall', 'hidetag', 'semua',
       'gantijam', 'gantiruang', 'batal', 'kosong', 'libur',
@@ -789,7 +790,7 @@ async function handleIncomingMessage(msg) {
       'jadwal', 'jadwala', 'jadwalb', 'jadwali',
       'today', 'hariini', 'tugas', 'task',
       'listdosen', 'menu', 'help', 'ai', 'tanya',
-      'status', 'id', 'scanjadwal', 'scan', 'reset', 'ingat',
+      'id', 'scanjadwal', 'scan', 'reset', 'ingat',
       'checkupdate', 'cekupdate'
     ];
 
@@ -892,7 +893,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -2123,38 +2124,49 @@ ${messageBody}
       break;
     }
 
+    case 'alters':
+    case 'about':
     case 'status': {
-      await react('⏳');
+      await react('🤖');
       const dt = getIndonesianDateTime() || {};
       const fullTimeStr = dt.fullFormatted || (dt.formattedDate ? `${dt.hari || dt.dayName || ''}, ${dt.formattedDate} - ${dt.formattedTime || ''}` : `${dt.dayName || dt.hari || 'WIB'}, ${dt.dateFormatted || ''} - ${dt.timeFormatted || ''}`);
       const isAuto = config.autoSend && config.autoSend.enabled;
 
       const dbStatus = await (checkDatabaseStatus ? checkDatabaseStatus() : Promise.resolve({ message: '🟢 Terhubung' }));
 
-      if (userIsOwner) {
-        const targetCount = (config.targetJids || []).length;
-        const statusText = `📊 *STATUS BOT (OWNER VIEW)*
-⏰ Waktu Sistem: ${fullTimeStr}
-🤖 Status Koneksi WA: Aktif & Terhubung
-🗄️ Database Cloud: ${dbStatus.message}
+      const uptimeSec = Math.floor(process.uptime());
+      const uptimeHours = Math.floor(uptimeSec / 3600);
+      const uptimeMin = Math.floor((uptimeSec % 3600) / 60);
+      const memUsageMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+      const isTermux = Boolean(process.env.PREFIX && process.env.PREFIX.includes('com.termux'));
+      const osType = isTermux ? 'Android (Termux)' : `${os.type()} ${os.arch()}`;
+      const targetCount = (config.targetJids || []).length;
 
-⚙️ *Konfigurasi:*
-• Prefiks: *${prefix}* (atau /)
-• Pengiriman Otomatis: ${isAuto ? '🟢 AKTIF' : '🔴 NONAKTIF'}
-• Jadwal Cron: \`${config.autoSend?.cronTime || '0 7 * * *'}\` (${config.autoSend?.timezone || 'Asia/Jakarta'})
-• Jumlah Saluran/Grup Target: *${targetCount}* target`;
+      const statusText = 
+`🤖 *[ALTERS - ACADEMIC AI COPILOT]*
+Halo! Namaku *Alters*, asisten AI akademik & co-pilot cerdas untuk komunitas mahasiswa SLINF26.
 
-        await reply(statusText);
-      } else {
-        const statusText = `📊 *STATUS BOT*
-⏰ Waktu Sistem: ${fullTimeStr}
-🤖 Status Bot: 🟢 Aktif & Siap Digunakan
-🗄️ Database Cloud: ${dbStatus.message}
-Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
+⚙️ *KONDISI SISTEM & HOST SERVER:*
+• Platform Host: *${osType}*
+• Runtime Engine: *Node.js ${process.version}*
+• Uptime Bot: *${uptimeHours} jam ${uptimeMin} menit* (Aktif & Siaga)
+• Konsumsi RAM: *~${memUsageMb} MB* (Hemat & Ringan)
+• Cloud Database: ${dbStatus.message}
+• Auto-Broadcast (07:00): ${isAuto ? '🟢 AKTIF' : '🔴 NONAKTIF'}
+• Target Siaran Terdaftar: *${targetCount}* target
 
-        await reply(statusText);
-      }
-      await react('📊');
+🚀 *PEMBARUAN FITUR TERKINI (CHANGELOG):*
+1. 🧠 *AI Slang & Kata Abstrak*: Paham bahasa santai, istilah kampus & kehadiran.
+2. ⏳ *Smart Memory*: Konteks sesi 10 menit + Memori Jangka Panjang permanen (!ingat).
+3. 📊 *Dual Polling*: Dukung Saluran (@newsletter) & Grup (@g.us) dengan auto text fallback.
+4. 👥 *Group Admin*: Fitur !tagall, !hidetag, dan quote reply langsung.
+5. ⚡ *Admin Schedule*: Shortcut !gantijam, !gantiruang, !batal dengan preview instan.
+6. 📢 *Selective Broadcast*: !send [target] dan !bc [target] <pesan>.
+7. 🔍 *GitHub Updater*: !checkupdate dan !update langsung dari WA.
+
+💡 _Ketik *!menu* untuk melihat seluruh perintah lengkap!_`;
+
+      await reply(statusText);
       break;
     }
 

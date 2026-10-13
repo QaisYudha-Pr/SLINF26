@@ -1,17 +1,18 @@
-# 🤖 SLINF26 - WhatsApp Smart Academic & Channel Bot
+# 🤖 ALTERS (SLINF26) - WhatsApp Smart Academic AI Co-Pilot & Channel Bot
 
-Bot WhatsApp asisten akademik dan manajemen saluran/grup berbasis **Node.js** dan **@whiskeysockets/baileys**, ditenagai oleh **Google Gemini AI (3.8 Flash)** dengan memori kontekstual cerdas, sistem polling kehadiran otomatis, integrasi tugas kuliah, serta penjadwalan siaran harian.
+**Alters** adalah asisten AI akademik dan bot manajemen saluran/grup berbasis **Node.js** dan **@whiskeysockets/baileys**, ditenagai oleh **Google Gemini AI (3.8 Flash)** dengan memori kontekstual cerdas, sistem polling kehadiran otomatis, integrasi database Supabase Cloud, serta penjadwalan siaran harian.
 
 ---
 
 ## ✨ Fitur Utama
 
-### 🧠 1. Asisten AI Edukasi & Copilot Percakapan
+### 🧠 1. Asisten AI Edukasi "Alters" & Copilot Percakapan
+- **Identitas Personal Alters**: Memiliki persona ramah, santai, berempati terhadap mahasiswa, dan tanggap membedah jadwal & materi kuliah.
 - **Gemini 3.8 Flash Engine**: Cepat, responsif, dan hemat sumber daya untuk dijalankan di Termux maupun VPS.
 - **Kamus Slang & Bahasa Mahasiswa**: Paham bahasa gaul kampus, istilah kehadiran (*cancel*, *kosong*, *diundur*, *ngaret*, *dimajuin*), dan singkatan matkul (*Basdat*, *Matdis*, *Jarkom*, *Alpro*, *RPL*, *DFA*, *KRS*).
 - **Memori Sesi 10 Menit**: Mengingat topik percakapan selama 10 menit jeda obrolan, lalu otomatis di-reset agar topik antar pengguna tidak saling tumpang tindih.
-- **Memori Jangka Panjang Permanen**: AI dapat mengingat nama panggilan, kelas, atau preferensi pengguna secara permanen (`memory_facts.json`).
-- **Analisis Multimodal (Foto & Dokumen)**: Kirim foto jadwal kuliah, PDF pengumuman, atau materi latihan, bot akan membaca dan merangkumnya secara terstruktur.
+- **Memori Jangka Panjang Permanen**: Alters dapat mengingat nama panggilan, kelas, atau preferensi pengguna secara permanen (`memory_facts.json`).
+- **Analisis Multimodal (Foto & Dokumen)**: Kirim foto jadwal kuliah, PDF pengumuman, atau materi latihan, Alters akan membaca dan merangkumnya secara terstruktur.
 
 ### 📊 2. Polling Kehadiran Dosen & Polling Bebas
 - **Saluran (`@newsletter`) & Grup (`@g.us`) Ready**:

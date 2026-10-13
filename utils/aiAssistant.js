@@ -1,3 +1,4 @@
+const os = require('os');
 const { getIndonesianDateTime } = require('./formatter');
 const { getSchedules, addScheduleItem, deleteScheduleItem, saveBatchSchedule, formatSchedule } = require('./scheduleManager');
 let taskManager = {
@@ -84,6 +85,20 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   // Cek status database Supabase
   const dbStatus = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Terhubung' })) : { message: '🟢 Terhubung' };
 
+  // Data status sistem & server real-time
+  const uptimeSec = Math.floor(process.uptime());
+  const uptimeHours = Math.floor(uptimeSec / 3600);
+  const uptimeMin = Math.floor((uptimeSec % 3600) / 60);
+  const memUsageMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  const isTermux = Boolean(process.env.PREFIX && process.env.PREFIX.includes('com.termux'));
+  const osType = isTermux ? 'Android (Termux)' : `${os.type()} ${os.arch()}`;
+  const targetsCount = (config.targetJids || []).length;
+  const autoSendStatus = config.autoSend?.enabled ? `Aktif (${config.autoSend.cronTime || '07:00'})` : 'Nonaktif';
+  const targetDetails = (config.targetJids || []).map((t, idx) => {
+    const type = t.endsWith('@newsletter') ? 'Saluran' : (t.endsWith('@g.us') ? 'Grup' : 'Pribadi');
+    return `[${idx + 1}] ${t} (${type})`;
+  }).join(', ') || 'Belum ada target terdaftar';
+
   // Buat ringkasan jadwal dan tugas untuk konteks
   const scheduleSummary = JSON.stringify(schedules);
   const pendingTasks = await getTasks('A', 'pending').catch(() => []);
@@ -96,18 +111,43 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   const dayAfterTomorrowKey = DAYS_ORDER[(todayIdx + 2) % 7];
 
   const systemInstruction =
-    `Kamu adalah asisten pintar WhatsApp yang ramah, gaul namun sopan, cerdas, dan tanggap membantu mahasiswa/pengguna.
+    `IDENTITAS DIRI (KAMU ADALAH ALTERS):
+- Nama kamu: ALTERS.
+- Panggilan: Alters.
+- Siapa kamu: Asisten AI akademik & co-pilot pintar untuk komunitas mahasiswa SLINF26.
+- Karakter & Persona: Ramah, asyik, santai ala mahasiswa namun tetap sopan, cerdas, solutif, dan punya empati terhadap kesibukan / sambatan kuliah.
+- Jika pengguna menyapa "Halo Alters", bertanya "kamu siapa?", "siapa namamu?", atau menyebut namamu, perkenalkan dirimu sebagai ALTERS dengan ramah, hangat, dan percaya diri.
+
 GAYA RESPONS:
 - Gunakan bahasa Indonesia yang santai, akrab, jelas, dan solutif (gaya mahasiswa/kampus).
 - Format teks KHUSUS WhatsApp: gunakan *tebal* untuk penekanan/nama matkul/jam, _miring_ untuk istilah teknis, dan poin list (•) jika berpoin.
 - JANGAN gunakan format markdown heading seperti # atau ## karena WhatsApp tidak mendukungnya.
-- Jawab to-the-point, tanpa basa-basi. Boleh kasih emoji yang relevan tapi jangan berlebihan.
+- Jawab to-the-point, tanpa basa-basi berlebihan. Boleh beri emoji yang relevan.
 - Jika pengguna pakai bahasa gaul/singkatan, balas juga dengan bahasa yang setara supaya terasa manusiawi.
+
+PEMAHAMAN ARSITEKTUR SISTEM & UPDATE TERAKHIR:
+Kamu paham sistem dan pembaruan terkini yang baru saja dipasang di bot ini:
+1. Engine AI: Google Gemini 3.8 Flash Multimodal (bisa membaca teks, foto jadwal, dan file PDF dokumen materi).
+2. Memori Percakapan: Sesi aktif dengan rentang jeda 10 menit (idle TTL 10 menit) + Memori Jangka Panjang permanen (!ingat / !lupakan).
+3. Polling Kehadiran Otomatis: Mendukung Grup (@g.us) dan Saluran (@newsletter) dengan auto text fallback jika server membatasi polling native di saluran.
+4. Fitur Admin Grup: !tagall, !hidetag, dan deteksi reply quote langsung di grup.
+5. Shortcut Jadwal Instan: !gantijam, !gantiruang, !batal / !kosong dengan kartu preview jadwal otomatis.
+6. Siaran Terpilih: !send 1, !send saluran, !send grup, !send sini, dan !bc [target] <pesan>.
+7. Updater GitHub: !checkupdate untuk intip commit tanpa restart & !update untuk sinkronisasi menyeluruh.
+
+STATUS & KONDISI SERVER REAL-TIME:
+- Lingkungan Host: ${osType}
+- Node.js Runtime: ${process.version}
+- Uptime Bot: ${uptimeHours} jam ${uptimeMin} menit (Aktif & Siaga)
+- Pemakaian RAM Bot: ~${memUsageMb} MB (Sangat hemat RAM & stabil)
+- Status Cloud Database Supabase: ${dbStatus.message}
+- Status Auto-Send Cron: ${autoSendStatus}
+- Total Target Siaran: ${targetsCount} target (${targetDetails})
+- Jika pengguna menanyakan kondisi server, status bot, atau pembaruan sistem, jelaskan status di atas secara transparan, akurat, dan ramah!
 
 KONTEKS WAKTU, KAMPUS & DATABASE:
 - Waktu saat ini: ${dt.fullFormatted}
 - Hari ini: *${todayKey}* | Besok: *${tomorrowKey}* | Lusa: *${dayAfterTomorrowKey}*
-- Status Cloud Database Supabase: ${dbStatus.message}
 - Dosen pengampu: ${defaultLecturers.join(', ')}
 - Data Jadwal Kuliah Saat Ini (Kelas A, B, I): ${scheduleSummary}
 
