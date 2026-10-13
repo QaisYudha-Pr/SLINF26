@@ -317,7 +317,25 @@ Parameter:
 - Opsi "target": "semua" (default), "saluran" (hanya Saluran WhatsApp), "grup" (hanya Grup WhatsApp), "sini" (chat saat ini), atau nomor indeks spesifik ("1", "2").
 - Opsi "text": isi teks kustom jika menyiarkan pesan pengumuman bebas.
 
+8. Pengelolaan Target Siaran ('Nargetin', Tambah Target, Hapus Target):
+⚠️ ATURAN SANGAT PENTING:
+- Jika pengguna meminta MENARGETKAN, MENGHUBUNGKAN, atau MENDAFTARKAN chat/grup/saluran sebagai target siaran (contoh: "targetin grup ini", "tolong nargetin saluran ini", "jadikan ini target", "targetin link https://chat.whatsapp.com/...", "nargetin link saluran"):
+  ➔ JANGAN PERNAH mengirim pesan broadcast atau polling!
+  ➔ SELALU gunakan aksi ADD_TARGET untuk mendaftarkan target:
+  [[ACTION:ADD_TARGET:{"target":"sini"}]] (untuk grup/chat saat ini) atau
+  [[ACTION:ADD_TARGET:{"target":"https://chat.whatsapp.com/..."}]] (jika pengguna menyertakan tautan)
+- Hapus target siaran (contoh: "hapus target 1", "hapus target saluran"):
+  [[ACTION:DEL_TARGET:{"target":"1"}]]
+- Lihat daftar target terdaftar (contoh: "cek target siaran", "target apa aja"):
+  [[ACTION:GET_TARGETS:{}]]
+
 🎯 CONTOH NYATA PENANGANAN PERMINTAAN ABSTRAK & MULTI-KATA (FEW-SHOT):
+• Permintaan: "targetin grup ini dong" atau "tolong nargetin chat ini ya"
+  Tindakan: Daftarkan obrolan saat ini sebagai target siaran. JANGAN kirim broadcast!
+  Aksi: [[ACTION:ADD_TARGET:{"target":"sini"}]]
+• Permintaan: "targetin link https://chat.whatsapp.com/xxx" atau "/ai targetin https://whatsapp.com/channel/xxx"
+  Tindakan: Masukkan grup/saluran dari link dan daftarkan sebagai target. JANGAN kirim broadcast!
+  Aksi: [[ACTION:ADD_TARGET:{"target":"https://chat.whatsapp.com/xxx"}]]
 • Permintaan: "halo ai kirimkan siaran polling dosen ke siaran testing"
   Tindakan: Pengguna ingin mengirim POLLING KEHADIRAN DOSEN ke Saluran/Testing. JANGAN kirim template agenda harian!
   Aksi: [[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Frau Wisma","Frau Lita","Herr Agus"],"target":"testing"}]]
@@ -461,7 +479,16 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
         if (!replyText) continue;
 
         // Periksa apakah AI memicu satu atau lebih aksi sistem (bisa batch aksi seperti menambah banyak tugas)
-        const actionMatches = [...replyText.matchAll(/\[\[ACTION:([A-Z_]+):([\s\S]*?)\]\]/g)];
+        let actionMatches = [...replyText.matchAll(/\[\[ACTION:([A-Z_]+):([\s\S]*?)\]\]/g)];
+
+        const qLowerPre = (userQuestion || '').toLowerCase();
+        const isTargetAddIntentPre = qLowerPre.includes('targetin') || qLowerPre.includes('nargetin') || qLowerPre.includes('jadikan target') || qLowerPre.includes('tambah target') || qLowerPre.includes('addtarget');
+        if (actionMatches.length === 0 && isTargetAddIntentPre) {
+          const urlMatch = (userQuestion || '').match(/https?:\/\/[^\s]+/i);
+          const tgt = urlMatch ? urlMatch[0] : 'sini';
+          actionMatches = [[`[[ACTION:ADD_TARGET:{"target":"${tgt}"}]]`, 'ADD_TARGET', JSON.stringify({ target: tgt })]];
+        }
+
         if (actionMatches.length > 0) {
           // Bersihkan seluruh tag action agar tidak tampil mentah ke pengguna di WhatsApp
           let cleanReply = replyText.replace(/\[\[ACTION:[A-Z_]+:[\s\S]*?\]\]/g, '').trim();
@@ -473,29 +500,43 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
             let actionType = match[1];
             const actionPayloadStr = match[2];
 
-            const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST'];
+            let actionData = {};
+            try {
+              actionData = JSON.parse(actionPayloadStr);
+            } catch (eParse) {
+              actionData = {};
+            }
+
+            // 🛡️ Safeguard cerdas untuk query nargetin / target intent vs broadcast/poll
+            const qLower = (userQuestion || '').toLowerCase();
+            const isTargetAddIntent = qLower.includes('targetin') || qLower.includes('nargetin') || qLower.includes('jadikan target') || qLower.includes('tambah target') || qLower.includes('addtarget');
+            if (isTargetAddIntent && (actionType === 'SEND_BROADCAST' || actionType === 'POLL_DOSEN' || actionType === 'CREATE_POLL')) {
+              actionType = 'ADD_TARGET';
+              const urlMatch = userQuestion.match(/https?:\/\/[^\s]+/i);
+              actionData.target = urlMatch ? urlMatch[0] : (actionData.target || 'sini');
+            }
+
+            // 🛡️ Safeguard cerdas untuk query gabungan / polling intent
+            const isPollIntent = qLower.includes('poll') || qLower.includes('polling') || qLower.includes('kehadiran dosen') || qLower.includes('presensi');
+            if (actionType === 'SEND_BROADCAST' && isPollIntent) {
+              actionType = 'POLL_DOSEN';
+              if (!actionData.lecturers || actionData.lecturers.length === 0) actionData.lecturers = defaultLecturers;
+              if (!actionData.target) {
+                if (qLower.includes('testing') || qLower.includes('saluran') || qLower.includes('channel') || qLower.includes('siaran')) {
+                  actionData.target = 'saluran';
+                } else if (qLower.includes('grup') || qLower.includes('group')) {
+                  actionData.target = 'grup';
+                }
+              }
+            }
+
+            const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST', 'ADD_TARGET', 'DEL_TARGET'];
             if (ownerOnlyActions.includes(actionType) && !isSenderOwner) {
               feedbacks.push(`⚠️ _Catatan: Aksi ${actionType} memerlukan izin khusus Admin / Owner bot._`);
               continue;
             }
 
             try {
-              const actionData = JSON.parse(actionPayloadStr);
-
-              // 🛡️ Safeguard cerdas untuk query gabungan / polling intent
-              const qLower = (userQuestion || '').toLowerCase();
-              const isPollIntent = qLower.includes('poll') || qLower.includes('polling') || qLower.includes('kehadiran dosen') || qLower.includes('presensi');
-              if (actionType === 'SEND_BROADCAST' && isPollIntent) {
-                actionType = 'POLL_DOSEN';
-                if (!actionData.lecturers || actionData.lecturers.length === 0) actionData.lecturers = defaultLecturers;
-                if (!actionData.target) {
-                  if (qLower.includes('testing') || qLower.includes('saluran') || qLower.includes('channel') || qLower.includes('siaran')) {
-                    actionData.target = 'saluran';
-                  } else if (qLower.includes('grup') || qLower.includes('group')) {
-                    actionData.target = 'grup';
-                  }
-                }
-              }
 
               if (actionType === 'BATCH_SCHEDULE') {
                 const resBatch = await saveBatchSchedule(actionData.kelas, actionData.jadwal);
@@ -678,30 +719,14 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                   (async () => {
                     try {
                       for (const destJid of destJids) {
-                        if (destJid.endsWith('@newsletter')) {
-                          await sendNativePoll(
-                            sockInstance,
-                            destJid,
-                            `🎓 Polling Kehadiran Dosen (${todayKey})`,
-                            [
-                              '✅ Semua Dosen Hadir',
-                              ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
-                              '❓ Belum Ada Info Pasti'
-                            ],
-                            0
-                          );
-                        } else {
-                          for (const lecturer of lecturers) {
-                            await new Promise(r => setTimeout(r, 600));
-                            await sendNativePoll(
-                              sockInstance,
-                              destJid,
-                              `🎓 Kehadiran: ${lecturer}`,
-                              ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
-                              1
-                            );
-                          }
-                        }
+                        const pollTitle = `🎓 Polling Kehadiran Dosen (${todayKey})`;
+                        const pollOptions = [
+                          '✅ Semua Dosen Hadir',
+                          ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
+                          '❓ Belum Ada Info Pasti'
+                        ];
+                        // 1 Polling All-in-One ringkas untuk mencegah spam beruntun baik di grup maupun saluran
+                        await sendNativePoll(sockInstance, destJid, pollTitle, pollOptions, 0);
                       }
                     } catch (errP) {
                       console.error('[AI Poll Lecturer Error]:', errP.message);
@@ -796,6 +821,122 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                     setTimeout(() => process.exit(0), 1500);
                     feedbacks.push(`🔄 *[Me-restart Bot]* Bot sedang dimuat ulang, tunggu 3 detik ya...`);
                   }
+                }
+              } else if (actionType === 'ADD_TARGET') {
+                const config = loadConfig();
+                if (!config.targetJids) config.targetJids = [];
+                let targetInput = (actionData.target || 'sini').trim();
+
+                if (targetInput === 'sini' || targetInput === 'chat' || targetInput === 'grup ini' || targetInput === 'saluran ini') {
+                  targetInput = remoteJid || '';
+                }
+
+                const channelMatch = targetInput.match(/whatsapp\.com\/channel\/([a-zA-Z0-9_-]+)/i);
+                const groupMatch = targetInput.match(/chat\.whatsapp\.com\/([a-zA-Z0-9_-]+)/i);
+
+                if (channelMatch && sockInstance) {
+                  const inviteCode = channelMatch[1];
+                  try {
+                    const meta = await sockInstance.newsletterMetadata('INVITE', inviteCode);
+                    if (meta && meta.id) {
+                      if (!config.targetJids.includes(meta.id)) {
+                        config.targetJids.push(meta.id);
+                        saveConfig(config);
+                        feedbacks.push(`✅ *[Target Saluran Ditambahkan]*\n• Nama Saluran: *${meta.name || 'Saluran'}*\n• JID Saluran: \`${meta.id}\`\n• Pengikut: *${meta.subscribers || 0}*\n\nTotal target siaran sekarang: ${config.targetJids.length}`);
+                      } else {
+                        feedbacks.push(`ℹ️ Saluran *${meta.name || 'Saluran'}* (\`${meta.id}\`) sudah terdaftar sebelumnya di target siaran.`);
+                      }
+                    } else {
+                      feedbacks.push(`❌ Saluran tidak ditemukan atau tautan sudah kedaluwarsa.`);
+                    }
+                  } catch (eCh) {
+                    feedbacks.push(`❌ Gagal memeriksa tautan saluran: ${eCh.message}`);
+                  }
+                } else if (groupMatch && sockInstance) {
+                  const inviteCode = groupMatch[1];
+                  try {
+                    const groupInfo = await sockInstance.groupGetInviteInfo(inviteCode);
+                    if (groupInfo && groupInfo.id) {
+                      let joinedStatus = 'ℹ️ Bot sudah berada di dalam grup ini';
+                      try {
+                        await sockInstance.groupAcceptInvite(inviteCode);
+                        joinedStatus = '🟢 Bot berhasil bergabung ke grup!';
+                      } catch (eJoin) {
+                        if (eJoin.message && !eJoin.message.includes('already in')) {
+                          console.log(`ℹ️ [Group Join Notice]: ${eJoin.message}`);
+                        }
+                      }
+                      const rawId = groupInfo.id;
+                      const groupJid = rawId.endsWith('@g.us') ? rawId : `${rawId}@g.us`;
+                      if (!config.targetJids.includes(groupJid)) {
+                        config.targetJids.push(groupJid);
+                        saveConfig(config);
+                        feedbacks.push(`✅ *[Target Grup Ditambahkan]*\n• Nama Grup: *${groupInfo.subject || 'Grup WhatsApp'}*\n• JID Grup: \`${groupJid}\`\n• Anggota: *${groupInfo.size || groupInfo.participants?.length || '?'}*\n• Status: ${joinedStatus}\n\nTotal target siaran sekarang: ${config.targetJids.length}`);
+                      } else {
+                        feedbacks.push(`ℹ️ Grup *${groupInfo.subject || 'Grup'}* (\`${groupJid}\`) sudah terdaftar di target siaran.`);
+                      }
+                    } else {
+                      feedbacks.push(`❌ Tautan undangan grup tidak valid atau kedaluwarsa.`);
+                    }
+                  } catch (eGr) {
+                    feedbacks.push(`❌ Gagal memproses tautan grup: ${eGr.message}`);
+                  }
+                } else if (targetInput.includes('@newsletter') || targetInput.includes('@g.us') || targetInput.includes('@s.whatsapp.net')) {
+                  if (!config.targetJids.includes(targetInput)) {
+                    let targetName = '';
+                    let targetType = targetInput.endsWith('@newsletter') ? '📢 Saluran' : (targetInput.endsWith('@g.us') ? '👥 Grup' : '👤 Pribadi');
+                    if (sockInstance) {
+                      if (targetInput.endsWith('@g.us')) {
+                        try {
+                          const gMeta = await sockInstance.groupMetadata(targetInput);
+                          if (gMeta?.subject) targetName = gMeta.subject;
+                        } catch (e) {}
+                      } else if (targetInput.endsWith('@newsletter')) {
+                        try {
+                          const nlMeta = await sockInstance.newsletterMetadata('JID', targetInput);
+                          if (nlMeta?.name) targetName = nlMeta.name;
+                        } catch (e) {}
+                      }
+                    }
+                    config.targetJids.push(targetInput);
+                    saveConfig(config);
+                    const nameInfo = targetName ? `• Nama: *${targetName}*\n` : '';
+                    feedbacks.push(`✅ *[Target Berhasil Didaftarkan]*\n${nameInfo}• ID JID: \`${targetInput}\`\n• Tipe: *${targetType}*\n\nTotal target siaran sekarang: ${config.targetJids.length}`);
+                  } else {
+                    feedbacks.push(`ℹ️ Target \`${targetInput}\` sudah terdaftar di daftar target.`);
+                  }
+                } else {
+                  feedbacks.push(`⚠️ Target tidak dikenali atau kosong. Anda bisa menyertakan tautan grup/saluran atau katakan "targetin chat ini".`);
+                }
+              } else if (actionType === 'DEL_TARGET') {
+                const config = loadConfig();
+                const targets = config.targetJids || [];
+                const delInput = String(actionData.target || '').trim();
+                let targetToRemove = delInput;
+                const numIdx = parseInt(delInput, 10);
+                if (!isNaN(numIdx) && numIdx > 0 && numIdx <= targets.length) {
+                  targetToRemove = targets[numIdx - 1];
+                }
+                if (targets.includes(targetToRemove)) {
+                  config.targetJids = targets.filter(j => j !== targetToRemove);
+                  saveConfig(config);
+                  feedbacks.push(`🗑️ *[Target Dihapus]*\nTarget \`${targetToRemove}\` telah dihapus dari daftar.\nSisa target siaran: ${config.targetJids.length}`);
+                } else {
+                  feedbacks.push(`⚠️ Target "${delInput}" tidak ditemukan dalam daftar target.`);
+                }
+              } else if (actionType === 'GET_TARGETS') {
+                const config = loadConfig();
+                const targets = config.targetJids || [];
+                if (targets.length === 0) {
+                  feedbacks.push(`📋 *[Daftar Target Siaran]*\nBelum ada target siaran yang didaftarkan.`);
+                } else {
+                  let listTxt = `📋 *[Daftar Target Siaran Terdaftar]* (${targets.length} target):\n\n`;
+                  for (let i = 0; i < targets.length; i++) {
+                    const t = targets[i];
+                    const typeLabel = t.endsWith('@newsletter') ? '📢 Saluran' : (t.endsWith('@g.us') ? '👥 Grup' : '👤 Pribadi');
+                    listTxt += `${i + 1}. ${typeLabel} - \`${t}\`\n`;
+                  }
+                  feedbacks.push(listTxt.trim());
                 }
               }
             } catch (eAction) {
