@@ -3,7 +3,10 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  downloadMediaMessage
+  downloadMediaMessage,
+  decryptPollVote,
+  getKeyAuthor,
+  jidNormalizedUser
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -391,58 +394,56 @@ function findForwardedNewsletterInfo(obj) {
   return null;
 }
 
-/**
- * Helper untuk mengirim Polling Asli WhatsApp:
- * Mendukung Saluran WhatsApp (@newsletter), Grup (@g.us), dan Chat Pribadi.
- * @param selectableCount 1 untuk single-choice, 0 untuk multiple-choice (izinkan beberapa jawaban)
- */
-async function sendNativePoll(sockInstance, targetJid, pollName, pollOptions, selectableCount = 1) {
-  if (!sockInstance || !targetJid) return null;
-  const isNewsletter = (targetJid || '').endsWith('@newsletter');
-  const safeOptions = (pollOptions || []).slice(0, 12);
+const {
+  sendNativePoll,
+  savePollSession,
+  getPollSession,
+  decryptPollVoteMessage
+} = require('./utils/pollUtils');
 
-  // 📢 KHUSUS SALURAN WHATSAPP (@newsletter):
-  // WhatsApp Channels TIDAK mendukung tipe pesan polling native (server WhatsApp mengabaikan / drop pollCreationMessage).
-  // Oleh karena itu, di Saluran kita kirimkan format Polling Teks Interaktif dengan nomor emoji & instruksi reaksi!
-  if (isNewsletter) {
-    const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
-    let textPoll = `📊 *${pollName}*\n`;
-    textPoll += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-    safeOptions.forEach((opt, idx) => {
-      const badge = numEmojis[idx] || `[${idx + 1}]`;
-      textPoll += `${badge} ${opt}\n`;
+const recentPollClicks = new Map();
+
+/**
+ * Menjalankan aksi otomatis ketika pengguna mengklik salah satu opsi di tombol polling interaktif
+ */
+async function executePollAction(sockInstance, originalMsg, remoteJid, optText, optIndex, voterJid, prefix) {
+  const optLower = (optText || '').toLowerCase();
+  let cmdToRun = '';
+
+  if (optLower.includes('jadwal') || optLower.includes('1.') || optLower.includes('1️⃣')) {
+    cmdToRun = 'today';
+  } else if (optLower.includes('tugas') || optLower.includes('2.') || optLower.includes('2️⃣')) {
+    cmdToRun = 'tugas';
+  } else if (optLower.includes('mahasiswa') || optLower.includes('mhs') || optLower.includes('3.') || optLower.includes('3️⃣')) {
+    cmdToRun = 'mhs';
+  } else if (optLower.includes('kehadiran') || optLower.includes('dosen') || optLower.includes('4.') || optLower.includes('4️⃣')) {
+    cmdToRun = 'all';
+  } else if (optLower.includes('pengingat') || optLower.includes('reminder') || optLower.includes('5.') || optLower.includes('5️⃣')) {
+    cmdToRun = 'reminder';
+  } else if (optLower.includes('status') || optLower.includes('server') || optLower.includes('6.') || optLower.includes('6️⃣')) {
+    cmdToRun = 'status';
+  } else if (optLower.includes('ai') || optLower.includes('7.') || optLower.includes('7️⃣')) {
+    await sockInstance.sendMessage(remoteJid, {
+      text: `🤖 *ALTERS AI CO-PILOT (PANDUAN CEPAT)*\n━━━━━━━━━━━━━━━━━━━━\nKamu bisa berinteraksi dan memberi perintah ke AI secara langsung!\n\n💡 *Cara menggunakan:*\n• Ketik: *${prefix}ai <pertanyaan / perintah>*\n• Atau tag *@Alters* di grup.\n\n📝 *Contoh pemakaian seru:*\n• *${prefix}ai catat tugas baru deadline jumat jam 23.59*\n• *${prefix}ai cek jadwal kuliah besok*\n• *${prefix}ai siapa saja mahasiswa kelas A?*\n• *${prefix}ai tolong buatkan ringkasan materi kuliah*\n• *${prefix}ai targetin grup ini dong*\n\n⚡ Didukung mesin Groq LPU Ultra-Fast + Google Gemini!`
     });
-    textPoll += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
-    textPoll += `💡 _Beri reaksi emoji (reaction) pada pesan ini atau tinggalkan komentar sesuai nomor pilihanmu!_`;
-    console.log(`📢 [Poll Saluran Terkirim] Mengirim polling teks interaktif ke saluran ${targetJid}`);
-    return await sockInstance.sendMessage(targetJid, { text: textPoll });
+    return;
   }
 
-  // 👥 GRUP (@g.us) & CHAT PRIBADI:
-  // Mendukung polling interaktif asli WhatsApp 100%!
-  try {
-    return await sockInstance.sendMessage(targetJid, {
-      poll: {
-        name: pollName,
-        values: safeOptions,
-        selectableCount: selectableCount
-      }
-    });
-  } catch (errFirst) {
-    if (selectableCount === 0) {
-      try {
-        return await sockInstance.sendMessage(targetJid, {
-          poll: {
-            name: pollName,
-            values: safeOptions,
-            selectableCount: 1
-          }
-        });
-      } catch (eRetry) {
-        throw errFirst;
-      }
-    }
-    throw errFirst;
+  if (cmdToRun) {
+    const syntheticMsg = {
+      key: {
+        remoteJid: remoteJid,
+        fromMe: false,
+        id: 'poll_click_' + Date.now(),
+        participant: voterJid
+      },
+      message: {
+        conversation: `${prefix}${cmdToRun}`
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+      _isSynthetic: true
+    };
+    await handleIncomingMessage(syntheticMsg);
   }
 }
 
@@ -730,6 +731,29 @@ async function handleIncomingMessage(msg) {
   const fromMe = !!msg.key.fromMe;
   const sender = msg.key.participant || remoteJid;
 
+  // 🔘 DETEKSI & DEKRIPSI KLIK TOMBOL POLLING (VOTE EVENT LISTENER)
+  const pollVoteResult = decryptPollVoteMessage(sock, msg);
+  if (pollVoteResult) {
+    if (pollVoteResult.unvoted) {
+      // Pengguna membatalkan centang pada polling, tidak perlu respon
+      return;
+    }
+    const { pollInfo, voterJid, selectedOptionIndex, selectedOptionText } = pollVoteResult;
+    console.log(`🔘 [Tombol Polling Dipencet] User ${voterJid} memilih [${selectedOptionIndex + 1}] "${selectedOptionText}" pada "${pollInfo.name}"`);
+
+    // Cegah klik ganda dalam kurun waktu 1.5 detik
+    const debKey = `${voterJid}_${pollInfo.name}_${selectedOptionIndex}`;
+    const lastClickTime = recentPollClicks.get(debKey) || 0;
+    if (Date.now() - lastClickTime < 1500) {
+      console.log(`ℹ️ [Poll Debounce] Mengabaikan klik duplikat dalam 1.5 detik: ${debKey}`);
+      return;
+    }
+    recentPollClicks.set(debKey, Date.now());
+
+    await executePollAction(sock, msg, remoteJid, selectedOptionText, selectedOptionIndex, voterJid, prefix);
+    return;
+  }
+
   // Ekstrak teks pesan dari berbagai tipe pesan
   const messageContent =
     msg.message.conversation ||
@@ -849,13 +873,12 @@ async function handleIncomingMessage(msg) {
 
   const reply = async (text) => {
     try {
-      if (!remoteJid.endsWith('@newsletter')) {
+      if (msg._isSynthetic || remoteJid.endsWith('@newsletter')) {
+        await sock.sendMessage(remoteJid, { text });
+      } else {
         sock.sendPresenceUpdate('composing', remoteJid).catch(() => {});
         await sock.sendMessage(remoteJid, { text }, { quoted: msg });
         sock.sendPresenceUpdate('paused', remoteJid).catch(() => {});
-      } else {
-        // Saluran tidak mendukung quote message
-        await sock.sendMessage(remoteJid, { text });
       }
     } catch (err) {
       console.error(`[Reply Error ke ${remoteJid}]`, err.message);
