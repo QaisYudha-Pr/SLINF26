@@ -291,6 +291,18 @@ const {
   formatMemoryForUser,
   removeFact
 } = aiAssistantModule;
+
+let diagnosticsModule = {
+  runDiagnostics: async () => ({ overallStatus: 'OK', checks: {}, recommendations: [] }),
+  formatWhatsAppReport: () => '🩺 Modul diagnostik sedang dimuat.'
+};
+try {
+  diagnosticsModule = require('./utils/diagnostics');
+} catch (e) {
+  console.warn('⚠️ [diagnostics Info]: Modul utils/diagnostics.js bermasalah:', e.message);
+}
+const { runDiagnostics, formatWhatsAppReport } = diagnosticsModule;
+
 const {
   sendDailyBroadcast,
   sendTaskReminder,
@@ -528,6 +540,22 @@ async function startBot() {
           console.error('[Restart Notice Error]:', e.message);
         }
       }
+
+      // 🩺 Startup Self-Test otomatis di latar belakang
+      setTimeout(async () => {
+        try {
+          const startupDiag = await runDiagnostics(sock);
+          if (startupDiag.overallStatus === 'FAIL') {
+            console.error('\n🚨 [DIAGNOSTIK STARTUP: ADA MASALAH]');
+            startupDiag.recommendations.forEach(r => console.error('  👉', r));
+            console.error('Ketik !test di WhatsApp untuk melihat laporan lengkap.\n');
+          } else if (startupDiag.overallStatus === 'WARNING') {
+            console.warn(`\n⚠️ [Startup Diagnostics Warning] ${startupDiag.recommendations.join(', ')}\n`);
+          } else {
+            console.log(`🩺 [Startup Self-Test OK] Seluruh modul lulus uji (${startupDiag.durationMs}ms)`);
+          }
+        } catch (eDiag) {}
+      }, 3500);
     }
 
     if (connection === 'close') {
@@ -2727,12 +2755,15 @@ Halo! Namaku *Alters*, asisten AI akademik & co-pilot cerdas untuk komunitas mah
         'scheduler.js',
         'configManager.js',
         'package.json',
+        'test.js',
         'utils/aiAssistant.js',
         'utils/scheduleManager.js',
         'utils/formatter.js',
         'utils/taskManager.js',
         'utils/pollUtils.js',
-        'utils/memoryManager.js'
+        'utils/memoryManager.js',
+        'utils/reminderManager.js',
+        'utils/diagnostics.js'
       ];
 
       try {
@@ -2861,6 +2892,25 @@ ${filesListText}
         console.error('❌ [Self-Update Error]:', updateErr.message);
         await react('❌');
         await reply(`❌ *Gagal Melakukan Update:* ${updateErr.message}\n\nData bot dan konfigurasi kamu tetap aman.`);
+      }
+      break;
+    }
+
+    case 'test':
+    case 'selftest':
+    case 'diag':
+    case 'diagnosa':
+    case 'status': {
+      await react('🩺');
+      await reply('⏳ *Sedang menjalankan pengujian mandiri (Self-Testing) seluruh subsistem bot...*\n_Mohon tunggu sekitar 2-4 detik..._');
+      try {
+        const diagReport = await runDiagnostics(sock);
+        const reportText = formatWhatsAppReport(diagReport);
+        await reply(reportText);
+        await react(diagReport.overallStatus === 'OK' ? '✅' : (diagReport.overallStatus === 'WARNING' ? '⚠️' : '❌'));
+      } catch (errDiag) {
+        await reply(`❌ Gagal menjalankan self-test: ${errDiag.message}`);
+        await react('❌');
       }
       break;
     }

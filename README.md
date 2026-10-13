@@ -287,13 +287,39 @@ CREATE INDEX IF NOT EXISTS idx_tasks_kelas_selesai ON public.tasks (kelas, seles
 | `!tagall [pesan]` | `!tagall Tolong kumpul sekarang ya!` | Memanggil seluruh anggota grup dengan daftar mention. |
 | `!hidetag [pesan]` | `!hidetag Link zoom ujian sudah dikirim` | Mengirim notifikasi senyap (*silent mention*) ke semua anggota. |
 
-### ⚙️ 8. Pemeliharaan & Status Sistem (Owner)
+### ⚙️ 8. Diagnostik, Pemeliharaan & Status Sistem
 | Perintah | Contoh Penggunaan | Penjelasan |
 | :--- | :--- | :--- |
-| `!status` | `!status` | Menampilkan uptime, status koneksi Supabase, memory, dan cron. |
+| `!test` / `!selftest` / `!diag` / `!status` | `!test` | Menjalankan uji mandiri seluruh subsistem bot & menampilkan saran solusi otomatis. |
 | `!checkupdate` | `!checkupdate` | Memeriksa apakah ada commit pembaruan baru di GitHub. |
 | `!update` | `!update` | Melakukan `git pull` dan me-restart bot secara otomatis. |
 | `!restart` | `!restart` | Me-restart proses bot secara bersih. |
+
+---
+
+## 🩺 Sistem Self-Testing & Auto-Diagnostic
+
+Bot dilengkapi dengan modul pengujian mandiri (*self-healing & diagnostics*) untuk mendeteksi subsistem yang bermasalah secara dini:
+
+1. **Pengujian Mandiri via Terminal (Sebelum Scan QR)**:
+   ```bash
+   npm test
+   # atau
+   node test.js
+   ```
+   Fitur ini sangat berguna untuk **kolaborator yang baru clone repo**: langsung ketahuan apakah API Key Gemini aktif, tabel Supabase terbaca, dan izin disk aman.
+
+2. **Pengujian Langsung via WhatsApp**:
+   Ketik `!test` atau `!status` di chat pribadi maupun grup. Bot akan mengirimkan kartu laporan komprehensif:
+   - 🟢 Status Google Gemini AI (Model & Latency ms)
+   - 🟢 Status Cloud Database Supabase & jumlah tugas aktif
+   - 🟢 Status Disk I/O & Memori Jangka Panjang
+   - 🟢 Status Custom Reminders Engine
+   - 🟢 Status Koneksi WhatsApp & Target Siaran
+   - 🛠️ **Saran Solusi Otomatis** jika ada modul yang berstatus 🟡 *WARNING* atau 🔴 *FAIL*.
+
+3. **Startup Health Check**:
+   Setiap kali bot menyala, bot secara otomatis memverifikasi semua subsistem di latar belakang. Jika ada masalah kritis (misalnya API Key salah), terminal akan menampilkan banner peringatan instan.
 
 ---
 
