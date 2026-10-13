@@ -1156,28 +1156,50 @@ Bisa langsung chat santai tanpa mengetik tanda prefiks!`;
       } catch (e) {}
 
       let dashboardText = 
-`╭───「 🎓 *CAMPUS LIVE DASHBOARD* 」
+`╭───「 🎓 *ALTERS BOT — MENU UTAMA* 」
 │ 📅 *${dt.fullFormatted}*
-│ 🤖 Bot: 🟢 Aktif | AI: ⚡ Multi-turn
+│ 🤖 Bot: 🟢 Aktif | AI: Alters (Gemini 3.8 Flash)
 ╰──────────────────────────
 
 📚 *KULIAH HARI INI (${dt.dayName}):*
 ${schedSummary}
-
-📝 *STATUS TUGAS:*
-${pendingTasksText}
+📝 *TUGAS:* ${pendingTasksText}
 
 ━━━━━━━━━━━━━━━━━━━━
-🧭 *PILIHAN MENU MODULAR:*
-Ketik perintah di bawah untuk membuka menu:
-• *${prefix}menu jadwal* ➔ Jadwal kuliah A/B/I & auto-scan
-• *${prefix}menu tugas*  ➔ Manajemen tugas & deadline
-• *${prefix}menu poll*   ➔ Polling kehadiran dosen
-• *${prefix}menu ai*     ➔ Asisten AI & reset percakapan
-${userIsOwner ? `• *${prefix}menu owner*  ➔ Pengaturan sistem & broadcast\n` : ''}• *${prefix}menu all*    ➔ Tampilkan seluruh menu lengkap
+📌 *DAFTAR PERINTAH UTAMA:*
 
-💡 _Atau tanyakan langsung ke AI:_
-_${prefix}ai ada tugas apa aja minggu ini?_`;
+📚 *JADWAL KULIAH*
+• *${prefix}jadwal a* / *b* / *i* ➔ Jadwal kuliah hari ini
+• *${prefix}jadwal a senin* ➔ Jadwal hari tertentu
+• *${prefix}scanjadwal* ➔ Auto-scan foto/PDF jadwal via AI
+
+📊 *POLLING KEHADIRAN DOSEN*
+• *${prefix}all* ➔ Buat polling semua dosen di chat ini
+• *${prefix}all target* ➔ Kirim polling dosen ke semua saluran/grup
+• *${prefix}dosen <nama>* ➔ Polling 1 dosen (cth: *${prefix}dosen Bu Woro*)
+• *${prefix}poll <judul>|<opsi1>|<opsi2>* ➔ Polling kustom bebas
+
+📝 *TUGAS KULIAH (CLOUD)*
+• *${prefix}tugas* ➔ Tampilkan semua tugas aktif
+• *${prefix}tugas tambah <matkul> | <judul> | <deadline>*
+• *${prefix}tugas done <id>* ➔ Tandai tugas selesai
+
+📢 *SIARAN & BROADCAST*
+• *${prefix}today* ➔ Pratinjau siaran hari ini
+• *${prefix}send [target]* ➔ Kirim agenda ke target pilihan
+• *${prefix}bc [target] <pesan>* ➔ Kirim pengumuman bebas
+• *${prefix}targets* ➔ Cek daftar target saluran & grup
+
+🤖 *TANYA ALTERS (AI CO-PILOT)*
+• *${prefix}ai <pertanyaan>* atau tag *@Alters* di grup
+• *${prefix}reset* ➔ Bersihkan memori obrolan
+• _Contoh:_ *${prefix}ai kirimkan siaran polling dosen ke siaran testing*
+• _Contoh:_ *${prefix}ai catat tugas Basdat deadline jumat*
+${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
+• *${prefix}gantijam* / *${prefix}gantiruang* / *${prefix}batal* ➔ Ubah jadwal cepat
+• *${prefix}addtarget <id>* / *${prefix}deltarget <id>* ➔ Kelola target
+• *${prefix}status* / *${prefix}update* / *${prefix}restart*\n` : ''}
+💡 _Info: Ketik *${prefix}menu all* untuk panduan lengkap atau *${prefix}menu <kategori>* (jadwal/tugas/poll/ai)._`;
 
       await reply(dashboardText);
       break;

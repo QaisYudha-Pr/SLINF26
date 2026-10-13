@@ -143,6 +143,7 @@ STATUS & KONDISI SERVER REAL-TIME:
 - Status Cloud Database Supabase: ${dbStatus.message}
 - Status Auto-Send Cron: ${autoSendStatus}
 - Total Target Siaran: ${targetsCount} target (${targetDetails})
+- Catatan Target Saluran: Saluran WhatsApp (@newsletter) sering disebut oleh pengguna sebagai "siaran testing", "saluran testing", atau "channel". Jika pengguna menyebut "siaran testing", itu merujuk ke target saluran ini!
 - Jika pengguna menanyakan kondisi server, status bot, atau pembaruan sistem, jelaskan status di atas secara transparan, akurat, dan ramah!
 
 KONTEKS WAKTU, KAMPUS & DATABASE:
@@ -245,17 +246,33 @@ atau jika menyuruh mematikan:
 [[ACTION:GET_TASKS:{"kelas":"A"}]]
 
 6. Polling Kehadiran Dosen & Polling Bebas:
-- Jika disuruh buat polling dosen (contoh: "poll all", "poll semua dosen", "bikin poll dosen Bu Woro"):
-[[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Frau Wisma","Frau Lita","Herr Agus"]}]]
-(Gunakan seluruh dosen default ${defaultLecturers.join(', ')} jika pengguna meminta "poll all" atau "semua dosen").
-- Jika disuruh bikin polling bebas/kustom (contoh: "bikin poll Menu Buka Puasa | Nasi Padang | Ayam Geprek"):
-[[ACTION:CREATE_POLL:{"name":"Menu Buka Puasa","options":["Nasi Padang","Ayam Geprek"]}]]
+⚠️ ATURAN SANGAT PENTING PEMILIHAN AKSI (JANGAN SALAH!):
+- Jika pengguna meminta "POLL", "POLLING", "PRESENSI", atau "KEHADIRAN DOSEN" (contoh: "bikin polling dosen", "kirimkan siaran polling dosen ke siaran testing", "poll kehadiran ke saluran", "bikin poll dosen Bu Woro"):
+  ➔ SELALU GUNAKAN [[ACTION:POLL_DOSEN:...]]!
+  ➔ JANGAN PERNAH gunakan SEND_BROADCAST jika ada kata "polling" atau "poll"!
+  ➔ Jika pengguna menyebut target tujuan (misal: "ke siaran testing", "ke saluran", "ke grup"), masukkan targetnya ke parameter "target":
+  [[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Frau Wisma","Frau Lita","Herr Agus"],"target":"saluran"}]]
+  (Gunakan seluruh dosen default ${defaultLecturers.join(', ')} jika pengguna meminta "poll all" atau "semua dosen").
 
-7. Kirim Broadcast Siaran Manual / Terpilih:
-Jika disuruh kirim/siarkan jadwal, template, atau pesan pengumuman:
+- Jika disuruh bikin polling bebas/kustom (contoh: "bikin poll Menu Buka Puasa | Nasi Padang | Ayam Geprek"):
+  [[ACTION:CREATE_POLL:{"name":"Menu Buka Puasa","options":["Nasi Padang","Ayam Geprek"],"target":"sini"}]]
+
+7. Kirim Broadcast Siaran Manual / Terpilih (KHUSUS TEMPLATE / PENGUMUMAN TEKS, BUKAN POLLING):
+- Gunakan aksi ini HANYA jika pengguna meminta menyiarkan TEMPLATE AGENDA HARIAN atau PESAN TEKS PENGUMUMAN (JANGAN PERNAH gunakan jika meminta polling):
 [[ACTION:SEND_BROADCAST:{"day":"${todayKey}","target":"semua"}]]
 - Opsi "target": "semua" (default), "saluran" (hanya Saluran WhatsApp), "grup" (hanya Grup WhatsApp), "sini" (chat saat ini), atau nomor indeks spesifik ("1", "2").
 - Opsi "text": isi teks kustom jika menyiarkan pesan pengumuman bebas.
+
+🎯 CONTOH NYATA PENANGANAN PERMINTAAN ABSTRAK & MULTI-KATA (FEW-SHOT):
+• Permintaan: "halo ai kirimkan siaran polling dosen ke siaran testing"
+  Tindakan: Pengguna ingin mengirim POLLING KEHADIRAN DOSEN ke Saluran/Testing. JANGAN kirim template agenda harian!
+  Aksi: [[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Frau Wisma","Frau Lita","Herr Agus"],"target":"testing"}]]
+• Permintaan: "siarkan polling dosen hari ini ke grup"
+  Tindakan: Kirim polling kehadiran dosen ke grup.
+  Aksi: [[ACTION:POLL_DOSEN:{"lecturers":["Frau Woro","Frau Wisma","Frau Lita","Herr Agus"],"target":"grup"}]]
+• Permintaan: "kirim siaran agenda hari ini" (tanpa kata poll/polling)
+  Tindakan: Kirim template teks agenda harian.
+  Aksi: [[ACTION:SEND_BROADCAST:{"day":"${todayKey}","target":"semua"}]]
 
 8. Status & Pemeliharaan:
 Jika menanyakan status sistem / bot / database:
@@ -436,52 +453,131 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
             } else if (actionType === 'GET_TASKS') {
               const listFormatted = await formatTaskList(actionData.kelas || 'A');
               return `${cleanReply}\n\n${listFormatted}`;
-            } else if (actionType === 'POLL_DOSEN') {
-              if (sockInstance && remoteJid) {
+            }
+
+            // 🛡️ Safeguard cerdas untuk query gabungan / abstrak:
+            // Jika AI salah mengira instruksi sebagai SEND_BROADCAST padahal pengguna menyebut polling/presensi dosen
+            const qLower = (userQuestion || '').toLowerCase();
+            const isPollIntent = qLower.includes('poll') || qLower.includes('polling') || qLower.includes('kehadiran dosen') || qLower.includes('presensi');
+            if (actionType === 'SEND_BROADCAST' && isPollIntent) {
+              console.log('🔄 [AI Safeguard] Re-routing SEND_BROADCAST ke POLL_DOSEN (Polling intent terdeteksi).');
+              actionType = 'POLL_DOSEN';
+              if (!actionData.lecturers || actionData.lecturers.length === 0) {
+                actionData.lecturers = defaultLecturers;
+              }
+              if (!actionData.target) {
+                if (qLower.includes('testing') || qLower.includes('saluran') || qLower.includes('channel') || qLower.includes('siaran')) {
+                  actionData.target = 'saluran';
+                } else if (qLower.includes('grup') || qLower.includes('group')) {
+                  actionData.target = 'grup';
+                }
+              }
+            }
+
+            if (actionType === 'POLL_DOSEN') {
+              if (sockInstance) {
                 const lecturers = Array.isArray(actionData.lecturers) && actionData.lecturers.length > 0 
                   ? actionData.lecturers 
                   : defaultLecturers;
+
+                const config = loadConfig();
+                const allTargets = config.targetJids || [];
+                let destJids = [remoteJid]; // default ke chat saat ini
+
+                if (actionData.target) {
+                  const tStr = String(actionData.target).toLowerCase().trim();
+                  if (tStr.includes('@newsletter') || tStr.includes('@g.us')) {
+                    destJids = [actionData.target];
+                  } else if (tStr.includes('saluran') || tStr.includes('siaran') || tStr.includes('testing') || tStr.includes('channel') || tStr.includes('newsletter')) {
+                    const nl = allTargets.filter(t => t.endsWith('@newsletter'));
+                    if (nl.length > 0) destJids = nl;
+                  } else if (tStr.includes('grup') || tStr.includes('group')) {
+                    const gr = allTargets.filter(t => t.endsWith('@g.us'));
+                    if (gr.length > 0) destJids = gr;
+                  } else if (tStr.includes('semua') || tStr.includes('all') || tStr === 'target') {
+                    if (allTargets.length > 0) destJids = allTargets;
+                  } else if (/^\d+$/.test(tStr)) {
+                    const idx = parseInt(tStr, 10) - 1;
+                    if (allTargets[idx]) destJids = [allTargets[idx]];
+                  } else if (allTargets.length === 1) {
+                    destJids = allTargets;
+                  }
+                }
+
                 (async () => {
                   try {
-                    if (remoteJid.endsWith('@newsletter')) {
-                      // Di Saluran: Kirim 1 Polling Asli All-in-One (dengan fallback otomatis jika server menolak)
-                      await sendNativePoll(
-                        sockInstance,
-                        remoteJid,
-                        `🎓 Polling Kehadiran Dosen (${todayKey})`,
-                        [
-                          '✅ Semua Dosen Hadir',
-                          ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
-                          '❓ Belum Ada Info Pasti'
-                        ],
-                        0
-                      );
-                    } else {
-                      for (const lecturer of lecturers) {
-                        await new Promise(r => setTimeout(r, 600));
+                    for (const destJid of destJids) {
+                      if (destJid.endsWith('@newsletter')) {
+                        // Di Saluran: Kirim 1 Polling Asli All-in-One (dengan fallback otomatis jika server menolak)
                         await sendNativePoll(
                           sockInstance,
-                          remoteJid,
-                          `🎓 Kehadiran: ${lecturer}`,
-                          ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
-                          1
+                          destJid,
+                          `🎓 Polling Kehadiran Dosen (${todayKey})`,
+                          [
+                            '✅ Semua Dosen Hadir',
+                            ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
+                            '❓ Belum Ada Info Pasti'
+                          ],
+                          0
                         );
+                      } else {
+                        for (const lecturer of lecturers) {
+                          await new Promise(r => setTimeout(r, 600));
+                          await sendNativePoll(
+                            sockInstance,
+                            destJid,
+                            `🎓 Kehadiran: ${lecturer}`,
+                            ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
+                            1
+                          );
+                        }
                       }
                     }
                   } catch (errP) {
                     console.error('[AI Poll Lecturer Error]:', errP.message);
                   }
                 })();
-                return `${cleanReply}\n\n📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* sedang diproses ke chat ini.`;
+
+                const isHere = destJids.length === 1 && destJids[0] === remoteJid;
+                const targetLabel = isHere ? 'chat ini' : `Saluran/Target terpilih (${destJids.map(j => j.split('@')[0]).join(', ')})`;
+                return `${cleanReply}\n\n📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* berhasil dikirim ke *${targetLabel}*!`;
               }
               return cleanReply;
             } else if (actionType === 'CREATE_POLL') {
-              if (sockInstance && remoteJid) {
+              if (sockInstance) {
                 const pollName = actionData.name || 'Polling';
                 const pollOpts = Array.isArray(actionData.options) && actionData.options.length >= 2 ? actionData.options : ['Ya', 'Tidak'];
+                const config = loadConfig();
+                const allTargets = config.targetJids || [];
+                let destJids = [remoteJid];
+
+                if (actionData.target) {
+                  const tStr = String(actionData.target).toLowerCase().trim();
+                  if (tStr.includes('@newsletter') || tStr.includes('@g.us')) {
+                    destJids = [actionData.target];
+                  } else if (tStr.includes('saluran') || tStr.includes('siaran') || tStr.includes('testing') || tStr.includes('channel') || tStr.includes('newsletter')) {
+                    const nl = allTargets.filter(t => t.endsWith('@newsletter'));
+                    if (nl.length > 0) destJids = nl;
+                  } else if (tStr.includes('grup') || tStr.includes('group')) {
+                    const gr = allTargets.filter(t => t.endsWith('@g.us'));
+                    if (gr.length > 0) destJids = gr;
+                  } else if (tStr.includes('semua') || tStr.includes('all') || tStr === 'target') {
+                    if (allTargets.length > 0) destJids = allTargets;
+                  } else if (/^\d+$/.test(tStr)) {
+                    const idx = parseInt(tStr, 10) - 1;
+                    if (allTargets[idx]) destJids = [allTargets[idx]];
+                  } else if (allTargets.length === 1) {
+                    destJids = allTargets;
+                  }
+                }
+
                 try {
-                  await sendNativePoll(sockInstance, remoteJid, pollName, pollOpts, 1);
-                  return `${cleanReply}\n\n📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke chat!`;
+                  for (const destJid of destJids) {
+                    await sendNativePoll(sockInstance, destJid, pollName, pollOpts, 1);
+                  }
+                  const isHere = destJids.length === 1 && destJids[0] === remoteJid;
+                  const targetLabel = isHere ? 'chat ini' : `${destJids.length} target`;
+                  return `${cleanReply}\n\n📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke *${targetLabel}*!`;
                 } catch (ePoll) {
                   return `${cleanReply}\n\n⚠️ Gagal membuat polling: ${ePoll.message}`;
                 }
