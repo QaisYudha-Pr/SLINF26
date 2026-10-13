@@ -314,13 +314,39 @@ function findForwardedNewsletterInfo(obj) {
  * @param selectableCount 1 untuk single-choice, 0 untuk multiple-choice (izinkan beberapa jawaban)
  */
 async function sendNativePoll(sockInstance, targetJid, pollName, pollOptions, selectableCount = 1) {
-  return await sockInstance.sendMessage(targetJid, {
-    poll: {
-      name: pollName,
-      values: pollOptions,
-      selectableCount: selectableCount
+  const isNewsletter = (targetJid || '').endsWith('@newsletter');
+
+  // Batasi maksimal 12 pilihan (batas WhatsApp)
+  const safeOptions = (pollOptions || []).slice(0, 12);
+
+  const msgOptions = {};
+  if (isNewsletter) {
+    // Saluran memerlukan flag newsletter agar tidak di-reject server
+    msgOptions.newsletter = true;
+  }
+
+  try {
+    return await sockInstance.sendMessage(targetJid, {
+      poll: {
+        name: pollName,
+        values: safeOptions,
+        selectableCount: selectableCount
+      }
+    }, msgOptions);
+  } catch (errFirst) {
+    if (isNewsletter) {
+      // Fallback: coba kirim tanpa flag newsletter
+      console.warn(`[Poll Newsletter Fallback] Coba tanpa flag newsletter untuk ${targetJid}: ${errFirst.message}`);
+      return await sockInstance.sendMessage(targetJid, {
+        poll: {
+          name: pollName,
+          values: safeOptions,
+          selectableCount: selectableCount
+        }
+      });
     }
-  });
+    throw errFirst;
+  }
 }
 
 /**
@@ -353,7 +379,9 @@ async function startBot() {
       return { conversation: 'bot-message' };
     },
     shouldIgnoreJid: (jid) => {
-      // Abaikan update status WA kontak agar tidak memakan RAM & CPU komputer
+      // Abaikan update status WA kontak agar tidak memakan RAM & CPU
+      // JANGAN abaikan newsletter/@g.us agar pesan saluran/grup tetap diproses
+      if (jid?.endsWith('@newsletter')) return false;
       return jid?.endsWith('@broadcast') || jid === 'status@broadcast';
     }
   });
@@ -463,6 +491,28 @@ async function startBot() {
       }
     }
   });
+
+  // Event khusus pesan dari Saluran WhatsApp (Newsletter)
+  // Di Baileys, pesan yang diposting ke newsletter dikirim lewat 'newsletter.messages' juga.
+  // Kita tangkap agar perintah dari owner saluran tetap diproses.
+  const newsletterEvName = 'newsletter.messages';
+  if (sock.ev.eventNames && typeof sock.ev.on === 'function') {
+    try {
+      sock.ev.on(newsletterEvName, async ({ messages } = {}) => {
+        if (!messages || !Array.isArray(messages)) return;
+        for (const msg of messages) {
+          try {
+            await handleIncomingMessage(msg);
+          } catch (err) {
+            console.error('[Newsletter Handler Error]', err);
+          }
+        }
+      });
+      console.log('[WA] Newsletter message event listener aktif.');
+    } catch (eNewsletterEv) {
+      // Event mungkin tidak didukung di versi Baileys ini, abaikan
+    }
+  }
 }
 
 /**
@@ -798,9 +848,16 @@ async function handleIncomingMessage(msg) {
 ╰──────────────────────────
 • *${prefix}all* ➔ Buat polling semua dosen default hari ini
 • *${prefix}all <d1, d2, ..>* ➔ Polling dosen kustom
+• *${prefix}all target* ➔ 📢 Kirim polling ke semua target terdaftar
+• *${prefix}all split* ➔ Polling terpisah per dosen (1 per 1)
 • *${prefix}dosen <nama>* ➔ Polling 1 nama dosen spesifik
+• *${prefix}dosen target <nama>* ➔ 📢 Polling 1 dosen ke semua target
 • *${prefix}poll <judul>|<opsi1>|<opsi2>* ➔ Buat polling bebas
-• *${prefix}listdosen* ➔ Lihat daftar nama dosen default`;
+• *${prefix}poll target <judul>|<opsi1>|<opsi2>* ➔ 📢 Polling bebas ke semua target
+• *${prefix}listdosen* ➔ Lihat daftar nama dosen default
+
+💡 _Kata kunci **target** = broadcast ke semua saluran/grup terdaftar_
+📌 _Daftarkan target dengan: *${prefix}addtarget <ID>*_`;
         await reply(text);
         break;
       }
@@ -1165,9 +1222,26 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
 
     case 'poll':
     case 'polling': {
-      const parts = query.split('|').map(p => p.trim()).filter(Boolean);
+      // Cek apakah ada kata kunci 'target' / 'targets' / 'semua' untuk broadcast
+      let pollIsBroadcast = false;
+      let rawPollQuery = query;
+
+      // Periksa kata kunci broadcast di awal query (sebelum format '|')
+      const firstPipeIdx = rawPollQuery.indexOf('|');
+      const prefixPart = firstPipeIdx >= 0 ? rawPollQuery.slice(0, firstPipeIdx) : rawPollQuery;
+      if (/\b(target|targets|semua|all|saluran|channel)\b/i.test(prefixPart)) {
+        pollIsBroadcast = true;
+        rawPollQuery = rawPollQuery.replace(/\b(target|targets|semua|all|saluran|channel)\b/gi, '').replace(/^[\s|]+/, '').trim();
+      }
+
+      const parts = rawPollQuery.split('|').map(p => p.trim()).filter(Boolean);
       if (parts.length < 3) {
-        await reply(`❌ Format polling salah. Gunakan tanda '|' untuk memisahkan pertanyaan dan pilihan (minimal 2 pilihan).\n\nContoh:\n*${prefix}poll Kuliah Pak Budi | Cancel | Masuk | Belum Diketahui*`);
+        await reply(
+          `❌ Format polling salah. Minimal butuh *1 pertanyaan + 2 pilihan* dipisah tanda '|'.\n\n` +
+          `*Contoh Penggunaan:*\n` +
+          `• *${prefix}poll Kuliah Pak Budi | Cancel | Masuk | Belum Tahu*\n` +
+          `• *${prefix}poll target Absen Hari Ini | Hadir | Tidak* _(kirim ke semua target terdaftar)_`
+        );
         return;
       }
 
@@ -1180,8 +1254,30 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
       }
 
       try {
-        await sendNativePoll(sock, remoteJid, pollQuestion, pollOptions, 1);
-        console.log(`📊 [Custom Poll Terkirim] "${pollQuestion}" ke ${remoteJid}`);
+        if (pollIsBroadcast) {
+          const targets = (config.targetJids && config.targetJids.length > 0) ? config.targetJids : [remoteJid];
+          if (!config.targetJids || config.targetJids.length === 0) {
+            await reply(`⚠️ Belum ada target terdaftar. Polling dikirim ke obrolan ini saja.`);
+          } else {
+            await reply(`⏳ Mengirim polling ke *${targets.length}* target terdaftar...`);
+          }
+
+          let successCount = 0;
+          for (const t of targets) {
+            await new Promise(r => setTimeout(r, 700)); // Jeda antar kirim
+            try {
+              await sendNativePoll(sock, t, pollQuestion, pollOptions, 1);
+              successCount++;
+              console.log(`📊 [Custom Poll Broadcast] "${pollQuestion}" ke ${t}`);
+            } catch (err) {
+              console.error(`[Poll Broadcast Error] Gagal kirim ke ${t}:`, err.message);
+            }
+          }
+          await reply(`✅ Polling berhasil dikirim ke *${successCount}/${targets.length}* target!`);
+        } else {
+          await sendNativePoll(sock, remoteJid, pollQuestion, pollOptions, 1);
+          console.log(`📊 [Custom Poll Terkirim] "${pollQuestion}" ke ${remoteJid}`);
+        }
       } catch (err) {
         console.error('[Custom Poll Error]', err);
         await reply(`❌ Gagal membuat polling: ${err.message}`);
