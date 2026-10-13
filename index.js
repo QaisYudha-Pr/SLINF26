@@ -2925,6 +2925,116 @@ Halo! Namaku *Alters*, asisten AI akademik & co-pilot cerdas untuk komunitas mah
       break;
     }
 
+    case 'mhs':
+    case 'mahasiswa':
+    case 'datamahasiswa': {
+      await react('🎓');
+      const searchKey = query.trim();
+      let list = [];
+      if (searchKey) {
+        list = await mahasiswaManager.searchMahasiswa(searchKey);
+      } else {
+        list = await mahasiswaManager.getMahasiswaList();
+      }
+
+      if (list.length === 0) {
+        await reply(searchKey 
+          ? `🔍 Mahasiswa dengan kata kunci *"${searchKey}"* tidak ditemukan di database Supabase.` 
+          : `📋 *[Data Mahasiswa]*\nBelum ada data mahasiswa terdaftar di database Supabase.\n\n_Untuk menambahkan, ketik:_\n*${prefix}tambahmhs <nama> | <nim>*`
+        );
+        return;
+      }
+
+      let mhsText = `🎓 *[DATA MAHASISWA SUPABASE]* (${list.length} orang terdaftar):\n\n`;
+      if (list.length <= 30) {
+        list.forEach((m, idx) => {
+          mhsText += `${idx + 1}. *${m.nama}* — NIM: \`${m.nim}\`\n`;
+        });
+      } else {
+        list.slice(0, 20).forEach((m, idx) => {
+          mhsText += `${idx + 1}. *${m.nama}* — NIM: \`${m.nim}\`\n`;
+        });
+        mhsText += `\n... dan *${list.length - 20} mahasiswa lainnya*.\n\n💡 _Cari nama/NIM spesifik dengan:_ *${prefix}mhs <nama/nim>* (contoh: *${prefix}mhs Syalisa*)`;
+      }
+      await reply(mhsText.trim());
+      break;
+    }
+
+    case 'tambahmhs':
+    case 'addmhs': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+      if (!query.includes('|')) {
+        await reply(`❌ Format salah. Gunakan:\n*${prefix}tambahmhs <Nama> | <NIM>*\n\nContoh:\n*${prefix}tambahmhs Dani Pratama | 26020504001*`);
+        return;
+      }
+      const [namaMhs, nimMhs] = query.split('|').map(s => s.trim());
+      if (!namaMhs || !nimMhs) {
+        await reply(`❌ Nama dan NIM tidak boleh kosong.`);
+        return;
+      }
+      await react('⏳');
+      const addRes = await mahasiswaManager.addMahasiswa(namaMhs, nimMhs);
+      if (addRes.success) {
+        await react('✅');
+        await reply(`✅ *[Mahasiswa Berhasil Ditambahkan]*\n• Nama: *${namaMhs}*\n• NIM: \`${nimMhs}\`\n\nTersimpan permanen di cloud database Supabase! 🎓`);
+      } else {
+        await reply(`⚠️ Gagal menambahkan mahasiswa: ${addRes.message}`);
+      }
+      break;
+    }
+
+    case 'hapusmhs':
+    case 'delmhs': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+      const nimToDel = query.trim();
+      if (!nimToDel) {
+        await reply(`❌ Masukkan NIM yang ingin dihapus. Contoh:\n*${prefix}hapusmhs 26020504001*`);
+        return;
+      }
+      await react('⏳');
+      const delRes = await mahasiswaManager.deleteMahasiswa(nimToDel);
+      if (delRes.success) {
+        await react('🗑️');
+        await reply(`🗑️ Mahasiswa dengan NIM \`${nimToDel}\` berhasil dihapus dari database Supabase.`);
+      } else {
+        await reply(`⚠️ Gagal menghapus mahasiswa: ${delRes.message}`);
+      }
+      break;
+    }
+
+    case 'importmhs':
+    case 'batchmhs': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+      let textToParse = query.trim();
+      const mediaFile = await extractMediaFromMessage(msg, sock);
+      if (mediaFile && mediaFile.buffer && (mediaFile.mimeType.includes('text') || mediaFile.mimeType.includes('csv'))) {
+        textToParse = mediaFile.buffer.toString('utf-8');
+      }
+      const parsed = mahasiswaManager.parseMahasiswaList(textToParse);
+      if (parsed.length === 0) {
+        await reply(`⚠️ Tidak ditemukan data nama dan NIM yang valid untuk diimpor.\n\n_Pastikan menyertakan daftar nama dan NIM, atau kirim file .txt / .csv dengan caption ${prefix}importmhs._`);
+        return;
+      }
+      await react('⏳');
+      const bRes = await mahasiswaManager.batchAddMahasiswa(parsed);
+      if (bRes.success) {
+        await react('✅');
+        await reply(`🎓 *[Import Massal Mahasiswa Berhasil]*\n• Total Diproses: *${bRes.total}* mahasiswa\n• Berhasil Masuk: *${bRes.inserted}* mahasiswa baru\n• Dilewati (NIM Sudah Ada): *${bRes.skipped}* mahasiswa\n\nTersimpan permanen di Cloud Database Supabase! 🚀`);
+      } else {
+        await reply(`⚠️ Gagal impor massal: ${bRes.message}`);
+      }
+      break;
+    }
+
     case 'gantijam':
     case 'ubahjam': {
       if (!userIsOwner) {
