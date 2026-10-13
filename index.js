@@ -615,6 +615,43 @@ async function extractMediaFromMessage(msg, sockInstance) {
 }
 
 /**
+ * Helper untuk menentukan target siaran terpilih dari argumen pengguna
+ */
+function resolveSelectedTargets(selectorStr, allTargets = [], currentJid = null) {
+  if (!selectorStr) return { targets: allTargets, label: 'seluruh target terdaftar' };
+  const s = selectorStr.toLowerCase().trim();
+
+  if (s === 'saluran' || s === 'channel' || s === 'channels') {
+    const matched = allTargets.filter(t => t.endsWith('@newsletter'));
+    return { targets: matched, label: `semua Saluran (${matched.length} target)` };
+  }
+  if (s === 'grup' || s === 'group' || s === 'groups') {
+    const matched = allTargets.filter(t => t.endsWith('@g.us'));
+    return { targets: matched, label: `semua Grup (${matched.length} target)` };
+  }
+  if (s === 'sini' || s === 'chat' || s === 'here') {
+    return { targets: currentJid ? [currentJid] : [], label: 'obrolan saat ini' };
+  }
+  if (s.includes('@newsletter') || s.includes('@g.us') || s.includes('@s.whatsapp.net')) {
+    return { targets: [s], label: `JID ${s}` };
+  }
+
+  // Cek nomor indeks (cth: "1", "1,2", "1 2")
+  const nums = s.split(/[,\s]+/).map(n => parseInt(n, 10)).filter(n => !isNaN(n) && n > 0);
+  if (nums.length > 0) {
+    const matched = [];
+    nums.forEach(idx => {
+      if (allTargets[idx - 1]) matched.push(allTargets[idx - 1]);
+    });
+    if (matched.length > 0) {
+      return { targets: matched, label: `target nomor [${nums.join(', ')}]` };
+    }
+  }
+
+  return { targets: allTargets, label: 'seluruh target terdaftar' };
+}
+
+/**
  * Memproses setiap pesan yang masuk
  */
 async function handleIncomingMessage(msg) {
@@ -748,6 +785,7 @@ async function handleIncomingMessage(msg) {
       'all', 'pollall', 'poll', 'polling', 'dosen', 'polldosen',
       'tagall', 'hidetag', 'semua',
       'gantijam', 'gantiruang', 'batal', 'kosong', 'libur',
+      'send', 'kirim', 'bc', 'broadcast',
       'jadwal', 'jadwala', 'jadwalb', 'jadwali',
       'today', 'hariini', 'tugas', 'task',
       'listdosen', 'menu', 'help', 'ai', 'tanya',
@@ -854,7 +892,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear'];
+  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -1069,8 +1107,9 @@ Bisa langsung chat santai tanpa mengetik tanda prefiks!`;
 • *${prefix}gantijam <matkul> | <jam>* ➔ Ubah jam kuliah & auto preview
 • *${prefix}gantiruang <matkul> | <ruang>* ➔ Pindah ruangan kuliah
 • *${prefix}batal <matkul>* / *${prefix}kosong* ➔ Tandai kuliah batal
-• *${prefix}send [hari]* ➔ Kirim broadcast sekarang
-• *${prefix}targets* ➔ Daftar grup target siaran
+• *${prefix}send [target]* ➔ Kirim template ke semua / target pilihan
+• *${prefix}bc [target] <pesan>* ➔ Siarkan pengumuman bebas ke target
+• *${prefix}targets* ➔ Daftar nomor & JID target siaran
 • *${prefix}addlink <link>* / *${prefix}addtarget <id>*
 • *${prefix}deltarget <id>* ➔ Hapus target
 • *${prefix}autosend <on/off>* ➔ Saklar siaran (07:00)
@@ -1667,13 +1706,130 @@ _[tempel/paste teks jadwal kamu di sini]_
 
     case 'send':
     case 'kirim': {
-      const targetDay = (args[1] || '').toLowerCase() || null;
-      await reply('⏳ Sedang memproses pengiriman template ke target saluran / grup...');
-      const res = await sendDailyBroadcast(sock, targetDay);
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+
+      const allTargets = config.targetJids || [];
+      const dayList = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu'];
+
+      let selectedTargets = allTargets;
+      let targetLabel = 'seluruh target terdaftar';
+      let customContent = null;
+      let targetDay = null;
+
+      const words = query.split(/\s+/).filter(Boolean);
+
+      // 1. Cek apakah menyiarkan Jadwal (!send jadwal a [target])
+      if (words[0] && words[0].toLowerCase() === 'jadwal') {
+        const cls = (words[1] || 'a').toUpperCase();
+        const d = dayList.includes((words[2] || '').toLowerCase()) ? words[2].toLowerCase() : null;
+        customContent = formatSchedule(cls, d);
+        const selectorCandidate = d ? words.slice(3).join(' ') : words.slice(2).join(' ');
+        const resolved = resolveSelectedTargets(selectorCandidate, allTargets, remoteJid);
+        selectedTargets = resolved.targets;
+        targetLabel = resolved.label;
+
+      // 2. Cek apakah menyiarkan Tugas (!send tugas [target])
+      } else if (words[0] && words[0].toLowerCase() === 'tugas') {
+        const cls = (words[1] || 'a').toUpperCase();
+        customContent = await formatTaskList(cls);
+        const selectorCandidate = words.slice(2).join(' ');
+        const resolved = resolveSelectedTargets(selectorCandidate, allTargets, remoteJid);
+        selectedTargets = resolved.targets;
+        targetLabel = resolved.label;
+
+      // 3. Siaran template harian
+      } else {
+        const foundDay = words.find(w => dayList.includes(w.toLowerCase()));
+        if (foundDay) targetDay = foundDay.toLowerCase();
+
+        const selectorWords = words.filter(w => !dayList.includes(w.toLowerCase())).join(' ');
+        const resolved = resolveSelectedTargets(selectorWords, allTargets, remoteJid);
+        selectedTargets = resolved.targets;
+        targetLabel = resolved.label;
+      }
+
+      if (selectedTargets.length === 0) {
+        await reply(`⚠️ Tidak ada target yang cocok untuk siaran ini.\nKetik *${prefix}targets* untuk melihat nomor dan daftar target.`);
+        return;
+      }
+
+      await react('⏳');
+      await reply(`⏳ *Mengirim siaran ke ${targetLabel} (${selectedTargets.length} target)...*`);
+
+      const res = await sendDailyBroadcast(sock, targetDay, selectedTargets, customContent);
       if (!res.success) {
         await reply(`❌ Gagal mengirim: ${res.message}`);
       } else {
-        await reply(`✅ Pengiriman selesai!\n🎯 Berhasil terkirim ke *${res.sentCount}* dari *${res.totalCount}* target.`);
+        await react('✅');
+        const targetSummary = selectedTargets.map((t, i) => {
+          const type = t.endsWith('@newsletter') ? '📢 Saluran' : (t.endsWith('@g.us') ? '👥 Grup' : '👤 Pribadi');
+          return `▫️ ${i + 1}. ${type} \`${t}\``;
+        }).join('\n');
+        await reply(`✅ *SIARAN SELESAI!*\n\n🎯 Berhasil terkirim ke *${res.sentCount}* dari *${res.totalCount}* target terpilih:\n${targetSummary}`);
+      }
+      break;
+    }
+
+    case 'bc':
+    case 'broadcast': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah broadcast hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+
+      if (!query) {
+        await reply(`❌ Format broadcast salah. Gunakan:\n*${prefix}bc [target] <pesan>*\n\n*Pilihan Target:*\n• *${prefix}bc Pengumuman...* ➔ Kirim ke semua target\n• *${prefix}bc 1 Pesan...* ➔ Kirim ke target nomor 1 saja\n• *${prefix}bc 1,2 Pesan...* ➔ Kirim ke nomor 1 & 2\n• *${prefix}bc saluran Pesan...* ➔ Kirim ke semua Saluran\n• *${prefix}bc grup Pesan...* ➔ Kirim ke semua Grup\n• *${prefix}bc sini Pesan...* ➔ Kirim ke chat ini saja\n\n_Ketik *${prefix}targets* untuk melihat daftar nomor target._`);
+        return;
+      }
+
+      const allTargets = config.targetJids || [];
+      const words = query.split(/\s+/).filter(Boolean);
+      let selectedTargets = allTargets;
+      let targetLabel = 'seluruh target terdaftar';
+      let messageBody = query;
+
+      const firstWord = (words[0] || '').toLowerCase();
+      const isSelector = /^\d+(,\d+)*$/.test(firstWord) || ['saluran', 'channel', 'grup', 'group', 'sini', 'chat'].includes(firstWord);
+
+      if (isSelector && words.length > 1) {
+        const resolved = resolveSelectedTargets(firstWord, allTargets, remoteJid);
+        selectedTargets = resolved.targets;
+        targetLabel = resolved.label;
+        messageBody = query.slice(words[0].length).trim();
+      }
+
+      if (!messageBody) {
+        await reply('❌ Harap sertakan pesan yang ingin disiarkan.');
+        return;
+      }
+
+      if (selectedTargets.length === 0) {
+        await reply(`⚠️ Target pengiriman tidak ditemukan. Ketik *${prefix}targets* untuk melihat daftar target.`);
+        return;
+      }
+
+      const dt = getIndonesianDateTime() || {};
+      const formattedBc = 
+`📢 *[PENGUMUMAN RESMI]*
+━━━━━━━━━━━━━━━━━━━━━
+
+${messageBody}
+
+━━━━━━━━━━━━━━━━━━━━━
+📅 ${dt.dateFormatted || ''} | ⏰ ${dt.timeFormatted || 'WIB'}`;
+
+      await react('⏳');
+      await reply(`⏳ *Mengirim broadcast ke ${targetLabel} (${selectedTargets.length} target)...*`);
+
+      const res = await sendDailyBroadcast(sock, null, selectedTargets, formattedBc);
+      if (!res.success) {
+        await reply(`❌ Gagal broadcast: ${res.message}`);
+      } else {
+        await react('✅');
+        await reply(`✅ *BROADCAST BERHASIL!*\nPesan pengumuman telah terkirim ke *${res.sentCount}* dari *${res.totalCount}* target (${targetLabel}).`);
       }
       break;
     }
@@ -1700,18 +1856,29 @@ _[tempel/paste teks jadwal kamu di sini]_
     case 'targets': {
       const targets = config.targetJids || [];
       if (targets.length === 0) {
-        await reply(`📋 Daftar target saluran / grup saat ini masih KOSONG.\nTambahkan dengan: *${prefix}addtarget <JID>*`);
+        await reply(`📋 Daftar target saluran / grup saat ini masih KOSONG.\nTambahkan dengan: *${prefix}addtarget <JID>* atau *${prefix}addlink <tautan_saluran>*`);
         return;
       }
 
       const listStr = targets
         .map((t, idx) => {
           const type = t.endsWith('@newsletter') ? '📢 Saluran' : (t.endsWith('@g.us') ? '👥 Grup' : '👤 Pribadi');
-          return `${idx + 1}. \`${t}\` (${type})`;
+          return `*${idx + 1}.* \`${t}\` (${type})`;
         })
         .join('\n');
 
-      await reply(`📋 *DAFTAR TARGET PENGIRIMAN:* \n\n${listStr}\n\nTotal: ${targets.length} target`);
+      const tipsStr = 
+`\n━━━━━━━━━━━━━━━━━━━━━
+💡 *CARA SIARAN KE TARGET PILIHAN:*
+• *${prefix}send 1* ➔ Kirim template ke target nomor 1 saja
+• *${prefix}send 1,2* ➔ Kirim ke target nomor 1 & 2
+• *${prefix}send saluran* ➔ Kirim hanya ke semua Saluran
+• *${prefix}send grup* ➔ Kirim hanya ke semua Grup
+• *${prefix}send sini* ➔ Kirim ke obrolan ini
+• *${prefix}send jadwal a [target]* ➔ Siarkan jadwal kuliah
+• *${prefix}bc [target] <pesan>* ➔ Siarkan pengumuman bebas kustom`;
+
+      await reply(`📋 *DAFTAR TARGET PENGIRIMAN (${targets.length}):*\n\n${listStr}\n${tipsStr}`);
       break;
     }
 

@@ -120,13 +120,25 @@ Scan kode QR yang muncul di terminal menggunakan menu **Perangkat Tertaut (Linke
 | `!checkupdate` | Cek commit pembaruan dari GitHub tanpa me-restart bot |
 | `!update` | Unduh pembaruan lengkap dari GitHub & auto-restart |
 
-### ⚙️ Sistem & Target Saluran
+### 📢 Siaran Fleksibel & Terpilih (Broadcast)
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `!send` | Kirim template harian ke seluruh target terdaftar |
+| `!send <1/2/nomor>` | Kirim template HANYA ke nomor target tertentu (contoh: `!send 1` atau `!send 1,2`) |
+| `!send saluran` / `!send grup` | Kirim template HANYA ke semua Saluran atau semua Grup |
+| `!send sini` | Kirim template ke obrolan/grup saat ini saja |
+| `!send jadwal <a/b/i> [target]` | Siarkan kartu jadwal kuliah ke target pilihan |
+| `!bc [target] <pesan>` | Siarkan pengumuman bebas kustom ke target tertentu (contoh: `!bc saluran Ujian jam 10`) |
+| `!targets` | Menampilkan nomor urut indeks & daftar seluruh target siaran aktif |
+
+### ⚙️ Sistem & Manajemen Target
 | Perintah | Deskripsi |
 | :--- | :--- |
 | `!id` | Melihat JID obrolan saat ini (grup/saluran/chat) |
-| `!targets` | Menampilkan seluruh target broadcast aktif |
 | `!addtarget <JID>` | Mendaftarkan saluran/grup ke daftar siaran |
+| `!addlink <link>` | Mendaftarkan saluran WhatsApp via tautan invite |
 | `!deltarget <JID>` | Menghapus saluran/grup dari daftar siaran |
+| `!autosend <on/off>` | Mengaktifkan/mematikan siaran otomatis harian (07:00 WIB) |
 | `!status` | Cek status bot, koneksi database, dan cron |
 | `!restart` | Me-restart bot secara aman (Khusus Owner) |
 

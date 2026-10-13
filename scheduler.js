@@ -5,14 +5,22 @@ const { getIndonesianDateTime, getRenderedMessageForDay } = require('./utils/for
 let activeCronTask = null;
 
 /**
- * Mengirim pesan harian ke semua target yang terdaftar di config
+/**
+ * Mengirim pesan harian atau pengumuman ke target tertentu atau semua target
+ * @param {object} sock - Baileys socket instance
+ * @param {string} [dayKeyOverride] - Hari template (senin, selasa, dst)
+ * @param {Array<string>} [customTargets] - Target spesifik pilihan (jika null, ambil dari config.targetJids)
+ * @param {string} [customText] - Teks pesan kustom (jika null, gunakan template harian)
  */
-async function sendDailyBroadcast(sock, dayKeyOverride = null) {
+async function sendDailyBroadcast(sock, dayKeyOverride = null, customTargets = null, customText = null) {
   const config = loadConfig();
-  const targetJids = config.targetJids || [];
+  const allConfigTargets = config.targetJids || [];
+  const targetJids = (Array.isArray(customTargets) && customTargets.length > 0)
+    ? customTargets
+    : allConfigTargets;
 
   if (targetJids.length === 0) {
-    console.log('[Scheduler] Tidak ada target JID yang ditentukan di config.json (targetJids kosong).');
+    console.log('[Scheduler] Tidak ada target JID yang ditentukan (targetJids kosong).');
     return {
       success: false,
       message: 'Belum ada target saluran / grup yang didaftarkan. Gunakan perintah !addtarget <JID>.'
@@ -21,9 +29,9 @@ async function sendDailyBroadcast(sock, dayKeyOverride = null) {
 
   const dt = getIndonesianDateTime();
   const dayKey = dayKeyOverride || dt.dayKey;
-  const messageText = getRenderedMessageForDay(dayKey);
+  const messageText = customText || getRenderedMessageForDay(dayKey);
 
-  console.log(`[Scheduler] Memulai pengiriman template harian '${dayKey}' ke ${targetJids.length} target...`);
+  console.log(`[Scheduler] Memulai pengiriman siaran ke ${targetJids.length} target...`);
 
   const results = [];
   for (const jid of targetJids) {
@@ -31,8 +39,8 @@ async function sendDailyBroadcast(sock, dayKeyOverride = null) {
       await sock.sendMessage(jid, { text: messageText });
       console.log(`[Scheduler] Berhasil terkirim ke: ${jid}`);
       results.push({ jid, status: 'success' });
-      // Jeda 1.5 detik antar target untuk keamanan anti-spam
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Jeda 1 detik antar target untuk keamanan anti-spam
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (err) {
       console.error(`[Scheduler] Gagal mengirim ke: ${jid} -> ${err.message}`);
       results.push({ jid, status: 'failed', error: err.message });

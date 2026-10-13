@@ -211,9 +211,11 @@ atau jika menyuruh mematikan:
 - Jika disuruh bikin polling bebas/kustom (contoh: "bikin poll Menu Buka Puasa | Nasi Padang | Ayam Geprek"):
 [[ACTION:CREATE_POLL:{"name":"Menu Buka Puasa","options":["Nasi Padang","Ayam Geprek"]}]]
 
-7. Kirim Broadcast Siaran Manual:
-Jika disuruh kirim broadcast template hari ini sekarang ke target:
-[[ACTION:SEND_BROADCAST:{"day":"${todayKey}"}]]
+7. Kirim Broadcast Siaran Manual / Terpilih:
+Jika disuruh kirim/siarkan jadwal, template, atau pesan pengumuman:
+[[ACTION:SEND_BROADCAST:{"day":"${todayKey}","target":"semua"}]]
+- Opsi "target": "semua" (default), "saluran" (hanya Saluran WhatsApp), "grup" (hanya Grup WhatsApp), "sini" (chat saat ini), atau nomor indeks spesifik ("1", "2").
+- Opsi "text": isi teks kustom jika menyiarkan pesan pengumuman bebas.
 
 8. Status & Pemeliharaan:
 Jika menanyakan status sistem / bot / database:
@@ -447,9 +449,26 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
               return cleanReply;
             } else if (actionType === 'SEND_BROADCAST') {
               if (sockInstance) {
-                const bRes = await sendDailyBroadcast(sockInstance, actionData.day);
+                const config = loadConfig();
+                const allTargets = config.targetJids || [];
+                let customTargets = null;
+                const tTarget = (actionData.target || '').toLowerCase().trim();
+
+                if (tTarget === 'saluran' || tTarget === 'channel') {
+                  customTargets = allTargets.filter(t => t.endsWith('@newsletter'));
+                } else if (tTarget === 'grup' || tTarget === 'group') {
+                  customTargets = allTargets.filter(t => t.endsWith('@g.us'));
+                } else if (tTarget === 'sini' || tTarget === 'chat') {
+                  customTargets = [remoteJid];
+                } else if (/^\d+$/.test(tTarget)) {
+                  const idx = parseInt(tTarget, 10) - 1;
+                  if (allTargets[idx]) customTargets = [allTargets[idx]];
+                }
+
+                const bRes = await sendDailyBroadcast(sockInstance, actionData.day, customTargets, actionData.text);
                 if (bRes.success) {
-                  return `${cleanReply}\n\n📢 *[Broadcast Selesai]* Pesan template telah berhasil dikirim ke seluruh target!`;
+                  const targetLabel = customTargets ? `${bRes.sentCount} target terpilih` : `seluruh ${bRes.sentCount} target terdaftar`;
+                  return `${cleanReply}\n\n📢 *[Siaran Berhasil]* Pesan telah berhasil dikirim ke *${targetLabel}*!`;
                 } else {
                   return `${cleanReply}\n\n⚠️ Gagal broadcast: ${bRes.message}`;
                 }
