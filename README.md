@@ -1,100 +1,63 @@
-# 🤖 Bot WhatsApp Template Pesan Harian Saluran & Grup
+# 🤖 SLINF26 - WhatsApp Smart Academic & Channel Bot
 
-Bot WhatsApp otomatis menggunakan **Node.js** dan **@whiskeysockets/baileys** untuk mengirim template pesan list harian (agenda, update, checklist, pengumuman) ke **Saluran WhatsApp (Channel)** maupun **Grup WhatsApp**.
+Bot WhatsApp asisten akademik dan manajemen saluran/grup berbasis **Node.js** dan **@whiskeysockets/baileys**, ditenagai oleh **Google Gemini AI (3.8 Flash)** dengan memori kontekstual cerdas, sistem polling kehadiran otomatis, integrasi tugas kuliah, serta penjadwalan siaran harian.
 
 ---
 
 ## ✨ Fitur Utama
 
-- 📅 **Template List Harian Terstruktur**: Disediakan template untuk setiap hari (Senin s/d Minggu) dengan format rapi (judul, tanggal, jam, poin checklist/agenda, dan footer).
-- 📢 **Dukungan Saluran (Channel / Newsletter) & Grup**: Bisa mengirim pesan ke Saluran WhatsApp resmi (`@newsletter`) dan Grup (`@g.us`).
-- ⏰ **Penjadwal Otomatis (Cron)**: Mengirim pesan template harian otomatis pada jam tertentu (misal: setiap pukul 07:00 WIB).
-- 🔍 **Deteksi Otomatis ID Saluran**: Cukup teruskan (forward) pesan dari Saluran ke bot, bot akan langsung mendeteksi ID Saluran Anda!
-- 💬 **Kontrol Penuh via Chat**: Admin dapat mengontrol bot via pesan WhatsApp tanpa perlu restart server.
-- 🔄 **Auto Reconnect & Multi-Session**: Sesi login tersimpan aman di folder `session_auth/`.
+### 🧠 1. Asisten AI Edukasi & Copilot Percakapan
+- **Gemini 3.8 Flash Engine**: Cepat, responsif, dan hemat sumber daya untuk dijalankan di Termux maupun VPS.
+- **Kamus Slang & Bahasa Mahasiswa**: Paham bahasa gaul kampus, istilah kehadiran (*cancel*, *kosong*, *diundur*, *ngaret*, *dimajuin*), dan singkatan matkul (*Basdat*, *Matdis*, *Jarkom*, *Alpro*, *RPL*, *DFA*, *KRS*).
+- **Memori Sesi 10 Menit**: Mengingat topik percakapan selama 10 menit jeda obrolan, lalu otomatis di-reset agar topik antar pengguna tidak saling tumpang tindih.
+- **Memori Jangka Panjang Permanen**: AI dapat mengingat nama panggilan, kelas, atau preferensi pengguna secara permanen (`memory_facts.json`).
+- **Analisis Multimodal (Foto & Dokumen)**: Kirim foto jadwal kuliah, PDF pengumuman, atau materi latihan, bot akan membaca dan merangkumnya secara terstruktur.
+
+### 📊 2. Polling Kehadiran Dosen & Polling Bebas
+- **Saluran (`@newsletter`) & Grup (`@g.us`) Ready**:
+  - Di grup: Mengirim polling interaktif native Baileys.
+  - Di Saluran WhatsApp: Mengirim polling native, dan secara otomatis beralih ke *Fallback Polling Teks Interaktif* berformat rapi jika server WhatsApp membatasi polling native di saluran.
+- **Mode All-in-One**: Menggabungkan seluruh daftar dosen dalam satu polling ringkas agar tidak membanjiri ruang obrolan.
+- **Perintah Cepat**: `!all`, `!pollall`, `!dosen <nama>`, atau `!poll Pertanyaan | Opsi 1 | Opsi 2`.
+
+### 👥 3. Interaksi Grup & Hak Admin
+- **Trigger Bebas (@mention & Quote Reply)**: Cukup mention bot `@bot` atau lakukan swipe-reply ke pesan bot di dalam grup untuk langsung berinteraksi tanpa harus mengetik prefiks.
+- **Pemanggilan Anggota (Admin Feature)**:
+  - `!tagall [pesan]` / `@bot tagall`: Memanggil seluruh anggota grup dengan daftar mention.
+  - `!hidetag [pesan]` / `@bot hidetag`: Mengirim pengumuman penting (*silent tag*) ke semua anggota tanpa membebani teks obrolan.
+
+### 📅 4. Manajemen Jadwal Kuliah & Database Tugas
+- **Multi-Kelas**: Mendukung jadwal perkuliahan Kelas A, B, dan Internasional.
+- **Database Tugas Terpusat**: Sinkronisasi tugas deadline kuliah berbasis Supabase Cloud.
+- **OCR Scan Jadwal**: Cukup kirim foto jadwal perkuliahan dengan perintah `!scanjadwal`, bot akan otomatis mengekstrak jam, mata kuliah, ruangan, dan menyimpannya.
+
+### ⏰ 5. Penjadwalan Siaran Otomatis (Cron Broadcast)
+- Mengirim rekap agenda, jadwal kuliah hari ini, dan reminder tugas setiap pagi secara otomatis ke seluruh target saluran dan grup terdaftar.
 
 ---
 
-## 🚀 Cara Menjalankan Bot
+## 🚀 Panduan Instalasi & Penggunaan
 
 ### 1. Prasyarat
-- **Node.js** versi 18 ke atas (Direkomendasikan v20+)
+- **Node.js** v20 atau v22+
+- **Git**
 
-### 2. Jalankan Bot
-Buka terminal di folder project ini:
+### 2. Clone & Install Dependensi
 ```bash
-npm start
+git clone https://github.com/QaisYudha-Pr/SLINF26.git
+cd SLINF26
+npm install
 ```
 
-### 3. Scan QR Code
-1. Pada terminal akan muncul tampilan **QR Code**.
-2. Buka aplikasi **WhatsApp** di smartphone Anda.
-3. Masuk ke **Menu Titik Tiga** (Android) atau **Pengaturan** (iOS) > **Perangkat Tertaut** (Linked Devices) > **Tautkan Perangkat**.
-4. Arahkan kamera HP ke QR Code yang muncul di terminal.
-5. Setelah terhubung, status di terminal akan berubah menjadi:
-   `✅ [WA] BERHASIL TERHUBUNG KE WHATSAPP!`
-
----
-
-## 🎯 Cara Menemukan ID Saluran (Channel) atau ID Grup
-
-### Cara 1: Menggunakan Saluran WhatsApp (Channel)
-1. Buka Saluran WhatsApp Anda.
-2. **Teruskan (Forward)** salah satu pesan dari saluran tersebut ke nomor bot.
-3. Bot akan membalas otomatis:
-   ```
-   📢 Terdeteksi Pesan dari Saluran WhatsApp!
-   • Nama Saluran: Info Saluran Kita
-   • JID Saluran: 12036302xxxxxxxxx@newsletter
-   ```
-4. Salin ID tersebut dan jadikan target dengan perintah:
-   `!addtarget 12036302xxxxxxxxx@newsletter`
-
-### Cara 2: Menggunakan Grup WhatsApp
-1. Masukkan bot ke dalam grup.
-2. Di dalam grup, ketik:
-   `!id`
-3. Bot akan membalas ID grup (berakhiran `@g.us`).
-4. Daftarkan dengan:
-   `!addtarget <ID_GRUP>`
-
----
-
-## 📋 Daftar Perintah (Commands) Bot
-
-Semua perintah diawali dengan prefiks `!` (dapat diubah di `config.json`):
-
-| Perintah | Deskripsi |
-| :--- | :--- |
-| `!menu` / `!help` | Menampilkan panduan dan daftar lengkap perintah bot |
-| `!today` / `!hariini` | Melihat pratinjau (preview) template pesan hari ini |
-| `!preview <hari>` | Melihat template untuk hari tertentu (contoh: `!preview senin`) |
-| `!send` | Mengirim pesan template hari ini langsung ke semua target saluran/grup |
-| `!send <hari>` | Mengirim pesan template hari tertentu ke semua target |
-| `!sendto <jid> [hari]` | Mengirim template ke satu ID target tertentu |
-| `!id` | Menampilkan ID / JID chat tempat perintah diketik |
-| `!targets` | Melihat daftar semua saluran / grup yang sudah didaftarkan |
-| `!addtarget <jid>` | Mendaftarkan saluran / grup baru ke daftar pengiriman |
-| `!deltarget <jid>` | Menghapus saluran / grup dari daftar pengiriman |
-| `!list` | Menampilkan daftar template hari yang tersedia |
-| `!additem <hari> <teks>` | Menambahkan 1 baris item/tugas ke hari tertentu |
-| `!delitem <hari> <nomor>` | Menghapus 1 baris item dari hari tertentu |
-| `!autosend on [jam:menit]` | Mengaktifkan kirim otomatis (contoh: `!autosend on 07:00`) |
-| `!autosend off` | Mematikan pengiriman otomatis |
-| `!status` | Mengecek status bot, jam kirim, dan tujuan aktif |
-
----
-
-## ⚙️ Konfigurasi (`config.json`)
-
-Anda juga bisa mengatur konfigurasi secara langsung melalui file [config.json](file:///c:/WiraSBY/coding-bot-wa/config.json):
-
+### 3. Konfigurasi (`config.json`)
+Atur nomor Owner dan API Key Gemini Anda di file `config.json`:
 ```json
 {
   "prefix": "!",
   "ownerNumbers": [
     "6281234567890"
   ],
+  "geminiApiKey": "AIzaSy...",
   "targetJids": [
     "12036302xxxxxxxxx@newsletter",
     "12036304xxxxxxxxx@g.us"
@@ -107,21 +70,61 @@ Anda juga bisa mengatur konfigurasi secara langsung melalui file [config.json](f
 }
 ```
 
-- **`prefix`**: Simbol awal perintah (default `!`).
-- **`ownerNumbers`**: Daftar nomor WhatsApp admin yang berhak mengeksekusi perintah.
-- **`targetJids`**: Daftar ID Saluran (`@newsletter`) atau Grup (`@g.us`) tujuan pesan.
-- **`autoSend.enabled`**: Set `true` untuk mengaktifkan pengiriman otomatis setiap hari.
-- **`autoSend.cronTime`**: Jadwal cron (default `"0 7 * * *"` untuk setiap hari pukul 07:00 pagi WIB).
-- **`autoSend.timezone`**: Zona waktu (default `"Asia/Jakarta"`).
+### 4. Menjalankan Bot
+```bash
+npm start
+```
+Scan kode QR yang muncul di terminal menggunakan menu **Perangkat Tertaut (Linked Devices)** di aplikasi WhatsApp Anda.
 
 ---
 
-## 📝 Kustomisasi Template List (`templates.json`)
+## 📋 Daftar Perintah Utama (Cheat Sheet)
 
-Buka file [templates.json](file:///c:/WiraSBY/coding-bot-wa/templates.json) untuk mengubah template tiap hari.
+### 🤖 AI & Memori
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `!ai <pertanyaan>` | Tanya jawab materi kuliah, tugas, atau bahasa santai |
+| `!ingat` | Menampilkan apa saja yang diingat AI tentangmu |
+| `!lupakan [topik]` | Menghapus catatan memori jangka panjang tertentu |
+| `!reset` | Me-reset sesi percakapan 10 menit saat ini |
 
-Setiap template mendukung variabel otomatis:
-- `{hari}` : Nama hari (misal: *Senin*)
-- `{tanggal}` : Tanggal lengkap (misal: *11 Oktober 2026*)
-- `{jam}` : Jam saat ini (misal: *07:00 WIB*)
-- `{waktu}` : Tanggal dan jam lengkap
+### 📊 Polling & Presensi
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `!all` / `!pollall` | Buat polling kehadiran seluruh dosen hari ini |
+| `!dosen <nama>` | Buat polling kehadiran untuk satu dosen spesifik |
+| `!poll Judul \| Opsi 1 \| Opsi 2` | Buat polling kustom pilihan ganda / tunggal |
+| `!listdosen` | Melihat daftar nama dosen perkuliahan |
+
+### 👥 Grup & Komunitas
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `@bot [tanya/perintah]` | Panggil bot langsung di grup tanpa prefiks |
+| `!tagall [pesan]` | Mention seluruh anggota grup dengan daftar nomor |
+| `!hidetag [pesan]` | Notifikasi seluruh anggota grup secara tersembunyi |
+
+### 📚 Akademik & Jadwal
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `!today` / `!hariini` | Jadwal perkuliahan hari ini |
+| `!jadwal [hari] [kelas]` | Cek jadwal (contoh: `!jadwal senin a`) |
+| `!tugas` | Cek daftar tugas dan deadline aktif |
+| `!scanjadwal` (kirim foto) | Ekstrak jadwal dari foto/dokumen |
+
+### ⚙️ Sistem & Target Saluran
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `!id` | Melihat JID obrolan saat ini (grup/saluran/chat) |
+| `!targets` | Menampilkan seluruh target broadcast aktif |
+| `!addtarget <JID>` | Mendaftarkan saluran/grup ke daftar siaran |
+| `!deltarget <JID>` | Menghapus saluran/grup dari daftar siaran |
+| `!status` | Cek status bot, koneksi database, dan cron |
+| `!restart` | Me-restart bot secara aman (Khusus Owner) |
+
+---
+
+## 🛡️ Stabilitas & Self-Healing
+Proyek ini dilengkapi mekanisme:
+- **Crash-Loop Guard**: Mencegah terminal Termux terkunci jika terjadi crash berulang.
+- **Self-Healing Bootstrap**: Otomatis merekonstruksi modul esensial jika ada file yang hilang saat transfer direktori.
+- **Debounced Storage**: Menyimpan memori dan riwayat percakapan secara efisien tanpa membebani I/O disk.

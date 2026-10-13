@@ -42,6 +42,14 @@ const {
   formatMemoryForUser
 } = memoryManager;
 
+let pollUtils = {
+  sendNativePoll: async () => null
+};
+try {
+  pollUtils = require('./pollUtils');
+} catch (e) {}
+const { sendNativePoll } = pollUtils;
+
 /**
  * Mengirim pertanyaan ke Google Gemini AI (gemini-3.8-flash)
  * Dilengkapi kemampuan multimodal, contextual memory, proactive clarification, dan action copilot.
@@ -62,10 +70,16 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
     : (config.defaultLecturers || ['Frau Woro', 'Frau Wisma', 'Frau Lita', 'Herr Agus']);
 
   // Target identifikasi untuk memori jangka panjang
+  // Grup: per-user agar memori tiap anggota tidak campur
+  // DM / Saluran: per-user atau per-JID
   const memoryTargetId = (remoteJid && remoteJid.endsWith('@g.us'))
     ? `${remoteJid}:${senderJid || 'user'}`
     : (senderJid || remoteJid || 'user');
   const longTermMemoryPrompt = getFormattedMemoryPrompt(memoryTargetId);
+
+  // Session ID: sama dengan memoryTargetId agar konteks per-user
+  // Jika grup, tiap anggota punya sesi sendiri
+  const sessionId = memoryTargetId;
 
   // Cek status database Supabase
   const dbStatus = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Terhubung' })) : { message: '🟢 Terhubung' };
@@ -87,7 +101,8 @@ GAYA RESPONS:
 - Gunakan bahasa Indonesia yang santai, akrab, jelas, dan solutif (gaya mahasiswa/kampus).
 - Format teks KHUSUS WhatsApp: gunakan *tebal* untuk penekanan/nama matkul/jam, _miring_ untuk istilah teknis, dan poin list (•) jika berpoin.
 - JANGAN gunakan format markdown heading seperti # atau ## karena WhatsApp tidak mendukungnya.
-- Jawab secara to-the-point tanpa basa-basi berlebihan.
+- Jawab to-the-point, tanpa basa-basi. Boleh kasih emoji yang relevan tapi jangan berlebihan.
+- Jika pengguna pakai bahasa gaul/singkatan, balas juga dengan bahasa yang setara supaya terasa manusiawi.
 
 KONTEKS WAKTU, KAMPUS & DATABASE:
 - Waktu saat ini: ${dt.fullFormatted}
@@ -99,14 +114,62 @@ KONTEKS WAKTU, KAMPUS & DATABASE:
 MEMORI JANGKA PANJANG (PROFIL & FAKTA TERSIMPAN TENTANG PENGGUNA/OBROLAN INI):
 ${longTermMemoryPrompt}
 
-KEMAMPUAN BAHASA MAHASISWA & SINGKATAN KAMPUS:
-- Paham singkatan matkul: DFA, Basdat (Basis Data), Matdis (Matematika Diskrit), Jarkom (Jaringan Komputer), Alpro (Algoritma Pemrograman), RPL, AI, B.Inggris, dll.
-- Paham istilah perubahan:
-  • "diundur" / "dimajuin" / "ganti jam" ➔ Perbarui jam matkul terkait.
-  • "pindah ruang" / "ke lab" ➔ Perbarui ruangan matkul terkait.
-  • "kosong" / "batal" / "cancel" / "libur" / "dosen ga masuk" ➔ Beri tahu mahasiswa, atau hapus/update jika diminta.
-- Paham penunjuk waktu relatif: "hari ini" (${todayKey}), "besok" (${tomorrowKey}), "lusa" (${dayAfterTomorrowKey}).
-- Jika kelas tidak disebutkan (misal: "jadwal hari ini apa"), periksa Kelas A terlebih dahulu dan sebutkan bahwa ini jadwal Kelas A, atau beri ringkasan singkat Kelas A & B.
+📚 KAMUS BAHASA GAUL, SINGKATAN & KATA ABSTRAK KAMPUS:
+Kamu WAJIB memahami makna berikut dan menafsirkannya dengan tepat sebelum menjawab:
+
+[KEHADIRAN & STATUS KULIAH]
+- "cancel", "ga masuk", "absent", "gpp", "libur", "kosong", "off", "gajadi", "batal" → Dosen/kuliah tidak hadir
+- "masuk", "ada", "hadir", "on", "jadi", "masih jalan" → Dosen/kuliah hadir
+- "ntar dulu", "maju", "dimajuin" → jadwal dipercepat/dimajukan waktunya
+- "diundur", "mundur", "ngaret", "telat mulai" → jadwal mundur/terlambat mulai
+- "pindah", "ganti tempat", "ke lab", "ke mana" → pindah ruangan
+- "gak tau", "blm tau", "masih nunggu info", "belum pasti", "entah" → status belum diketahui
+
+[EKSPRESI MAHASISWA]
+- "gas", "gasken", "langsung aja", "yuk", "cuss" → lakukan / jalankan sekarang
+- "ntap", "mantap", "nice", "okesip", "oke bos", "siap" → setuju / bagus
+- "mager", "males", "nda mood" → tidak semangat/malas
+- "gabut", "nganggur" → tidak ada aktivitas/tugas
+- "nembak" / "tembak soal" → mengerjakan latihan soal langsung
+- "boong", "bercanda", "kidding", "canda" → tidak serius / bercanda
+- "fix", "pasti", "confirmed", "yep" → dipastikan / benar
+- "woles", "santai", "slow" → tidak terburu-buru
+- "kelar", "beres", "done", "selesai", "udah" → sudah selesai
+- "nyicil", "cicil dulu" → mengerjakan sedikit-sedikit
+- "numpuk", "banyak banget", "overwhelming" → tugas/deadline banyak
+- "gampang", "receh", "enteng" → mudah
+- "susah", "susah banget", "parah", "hancur", "mampus" → sulit / nilai buruk
+
+[SINGKATAN MATKUL & KAMPUS]
+- DFA, FSA → Teori Otomata (Deterministic Finite Automaton)
+- Basdat / BD → Basis Data
+- Matdis / MD → Matematika Diskrit
+- Jarkom / JK → Jaringan Komputer
+- Alpro / AP → Algoritma & Pemrograman
+- RPL → Rekayasa Perangkat Lunak
+- AI / Kecerdasan Buatan → Artificial Intelligence
+- B.Ing / Bing / BI → Bahasa Inggris
+- Sik / Sinyal → Sistem Komunikasi/Sinyal
+- PWS → Pemrograman Web / Project Web Service
+- Pabo / Probstat → Probabilitas & Statistika
+- SKS → Satuan Kredit Semester
+- UTS, UAS, UP → Ujian Tengah/Akhir Semester / Ujian Praktikum
+- IP, IPK → Indeks Prestasi (Kumulatif)
+- SP → Semester Pendek
+- KRS → Kartu Rencana Studi
+
+[PENUNJUK WAKTU & KONTEKS]
+- "hari ini" → ${todayKey}
+- "besok" → ${tomorrowKey}
+- "lusa" → ${dayAfterTomorrowKey}
+- "minggu depan", "next week" → 7 hari dari sekarang
+- "jam sekian" / "jam X" → waktu spesifik kuliah
+- "siang", "pagi", "sore", "malam" → kira-kira rentang jam
+
+KEMAMPUAN BAHASA MAHASISWA & INFERENSI KONTEKSTUAL:
+- Paham singkatan dan istilah di atas sebelum menjawab.
+- Jika kalimat ambigu (misal: "diundur"), cek konteks riwayat: mata kuliah apa yang sedang dibahas? Siapa dosennya?
+- Jika kelas tidak disebutkan, default ke Kelas A. Sebutkan bahwa ini jadwal Kelas A dan tawari cek Kelas B/I jika perlu.
 
 KEMAMPUAN MEMBACA DOKUMEN / FOTO:
 Jika pengguna melampirkan file dokumen (PDF) atau foto, analisis isi dokumen/foto tersebut secara mendalam, ekstrak poin-poin penting, atau simpulkan data tabel jadwal perkuliahan secara terstruktur.
@@ -184,10 +247,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
     'models/gemini-3.8-flash'
   ];
 
-  // Identifikasi sesi chat (per user di DM, atau per user-group di grup)
-  const sessionId = (remoteJid && remoteJid.endsWith('@g.us'))
-    ? `${remoteJid}:${senderJid || 'user'}`
-    : (remoteJid || senderJid || 'default');
+  // sessionId sudah didefinisikan di atas (sama dengan memoryTargetId)
 
   const session = getSession(sessionId);
 
@@ -235,10 +295,11 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
   });
 
   // Bangun payload sekali di luar loop agar hemat CPU dan RAM
+  // temperature 0.55: cukup kreatif & santai untuk gaya mahasiswa, tapi tetap akurat untuk data
   const payloadStr = JSON.stringify({
     contents,
     generationConfig: {
-      temperature: 0.3,
+      temperature: 0.55,
       maxOutputTokens: 3072
     }
   });
@@ -338,35 +399,35 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 (async () => {
                   try {
                     if (remoteJid.endsWith('@newsletter')) {
-                      // Di Saluran: Kirim 1 Polling Asli All-in-One agar tidak memenuhi chat!
-                      await sockInstance.sendMessage(remoteJid, {
-                        poll: {
-                          name: `🎓 Polling Kehadiran Dosen (${todayKey})`,
-                          values: [
-                            '✅ Semua Dosen Hadir',
-                            ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
-                            '❓ Belum Ada Info Pasti'
-                          ],
-                          selectableCount: 0
-                        }
-                      });
+                      // Di Saluran: Kirim 1 Polling Asli All-in-One (dengan fallback otomatis jika server menolak)
+                      await sendNativePoll(
+                        sockInstance,
+                        remoteJid,
+                        `🎓 Polling Kehadiran Dosen (${todayKey})`,
+                        [
+                          '✅ Semua Dosen Hadir',
+                          ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
+                          '❓ Belum Ada Info Pasti'
+                        ],
+                        0
+                      );
                     } else {
                       for (const lecturer of lecturers) {
                         await new Promise(r => setTimeout(r, 600));
-                        await sockInstance.sendMessage(remoteJid, {
-                          poll: {
-                            name: `🎓 Kehadiran: ${lecturer}`,
-                            values: ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
-                            selectableCount: 1
-                          }
-                        });
+                        await sendNativePoll(
+                          sockInstance,
+                          remoteJid,
+                          `🎓 Kehadiran: ${lecturer}`,
+                          ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
+                          1
+                        );
                       }
                     }
                   } catch (errP) {
                     console.error('[AI Poll Lecturer Error]:', errP.message);
                   }
                 })();
-                return `${cleanReply}\n\n📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* sedang dikirim ke chat ini.`;
+                return `${cleanReply}\n\n📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* sedang diproses ke chat ini.`;
               }
               return cleanReply;
             } else if (actionType === 'CREATE_POLL') {
@@ -374,13 +435,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 const pollName = actionData.name || 'Polling';
                 const pollOpts = Array.isArray(actionData.options) && actionData.options.length >= 2 ? actionData.options : ['Ya', 'Tidak'];
                 try {
-                  await sockInstance.sendMessage(remoteJid, {
-                    poll: {
-                      name: pollName,
-                      values: pollOpts,
-                      selectableCount: 1
-                    }
-                  });
+                  await sendNativePoll(sockInstance, remoteJid, pollName, pollOpts, 1);
                   return `${cleanReply}\n\n📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke chat!`;
                 } catch (ePoll) {
                   return `${cleanReply}\n\n⚠️ Gagal membuat polling: ${ePoll.message}`;
@@ -397,6 +452,31 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 }
               }
               return cleanReply;
+
+            // ✅ FIX: REMEMBER & FORGET dipindah ke level atas (sebelumnya salah nested di SYSTEM)
+            } else if (actionType === 'REMEMBER') {
+              if (actionData.key && actionData.value) {
+                saveFact(memoryTargetId, actionData.key, String(actionData.value));
+                console.log(`🧠 [AI Memory Saved] ${memoryTargetId} -> ${actionData.key}: ${actionData.value}`);
+              }
+              // Simpan percakapan ke sesi
+              try {
+                addSessionTurn(sessionId, 'user', userQuestion || '(mengirim lampiran)');
+                addSessionTurn(sessionId, 'model', cleanReply);
+              } catch (eMem) {}
+              return cleanReply || `✅ Oke, aku sudah ingat ya!`;
+
+            } else if (actionType === 'FORGET') {
+              if (actionData.key) {
+                removeFact(memoryTargetId, actionData.key);
+                console.log(`🧠 [AI Memory Removed] ${memoryTargetId} -> ${actionData.key}`);
+              }
+              try {
+                addSessionTurn(sessionId, 'user', userQuestion || '(mengirim lampiran)');
+                addSessionTurn(sessionId, 'model', cleanReply);
+              } catch (eMem) {}
+              return cleanReply || `🗑️ Oke, catatan itu sudah aku hapus!`;
+
             } else if (actionType === 'SYSTEM') {
               if (actionData.action === 'status') {
                 const dbStat = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Normal' })) : { message: '🟢 Terhubung' };
@@ -405,16 +485,6 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 if (!isSenderOwner) return `${cleanReply}\n\n⚠️ Hanya Owner yang boleh me-restart bot.`;
                 setTimeout(() => process.exit(0), 1500);
                 return `${cleanReply}\n\n🔄 *[Me-restart Bot]* Bot sedang dimuat ulang, tunggu 3 detik ya...`;
-              } else if (actionType === 'REMEMBER') {
-                if (actionData.key && actionData.value) {
-                  saveFact(memoryTargetId, actionData.key, actionData.value);
-                  console.log(`🧠 [AI Memory Saved] ${memoryTargetId} -> ${actionData.key}: ${actionData.value}`);
-                }
-              } else if (actionType === 'FORGET') {
-                if (actionData.key) {
-                  removeFact(memoryTargetId, actionData.key);
-                  console.log(`🧠 [AI Memory Removed] ${memoryTargetId} -> ${actionData.key}`);
-                }
               }
             }
           } catch (eAction) {

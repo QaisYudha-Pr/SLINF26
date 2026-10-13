@@ -140,13 +140,33 @@ module.exports = {
     if (!fs.existsSync(pollUtilsFile)) {
       console.log('🩺 [Self-Heal] Memulihkan file utils/pollUtils.js yang hilang...');
       const pollCode = `async function sendNativePoll(sock, jid, pollTitle, pollOptions, selectableCount = 1) {
-  return await sock.sendMessage(jid, {
-    poll: {
-      name: pollTitle,
-      values: pollOptions,
-      selectableCount: selectableCount
+  if (!sock || !jid) return null;
+  const isNewsletter = (jid || '').endsWith('@newsletter');
+  const safeOptions = (pollOptions || []).slice(0, 12);
+  const msgOptions = {};
+  if (isNewsletter) msgOptions.newsletter = true;
+  try {
+    return await sock.sendMessage(jid, {
+      poll: { name: pollTitle, values: safeOptions, selectableCount }
+    }, msgOptions);
+  } catch (errFirst) {
+    if (isNewsletter) {
+      try {
+        return await sock.sendMessage(jid, {
+          poll: { name: pollTitle, values: safeOptions, selectableCount }
+        });
+      } catch (errSecond) {
+        const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
+        let textPoll = \`📊 *\${pollTitle}*\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n\`;
+        safeOptions.forEach((opt, idx) => {
+          textPoll += \`\${numEmojis[idx] || '[' + (idx + 1) + ']'} \${opt}\\n\`;
+        });
+        textPoll += \`\\n━━━━━━━━━━━━━━━━━━━━━\\n💡 _Kirim reaksi emoji atau balas pilihan Anda!_\`;
+        return await sock.sendMessage(jid, { text: textPoll });
+      }
     }
-  });
+    throw errFirst;
+  }
 }
 module.exports = { sendNativePoll };
 `;
@@ -335,15 +355,41 @@ async function sendNativePoll(sockInstance, targetJid, pollName, pollOptions, se
     }, msgOptions);
   } catch (errFirst) {
     if (isNewsletter) {
-      // Fallback: coba kirim tanpa flag newsletter
-      console.warn(`[Poll Newsletter Fallback] Coba tanpa flag newsletter untuk ${targetJid}: ${errFirst.message}`);
-      return await sockInstance.sendMessage(targetJid, {
-        poll: {
-          name: pollName,
-          values: safeOptions,
-          selectableCount: selectableCount
-        }
-      });
+      try {
+        console.warn(`[Poll Newsletter Fallback] Coba tanpa flag newsletter untuk ${targetJid}: ${errFirst.message}`);
+        return await sockInstance.sendMessage(targetJid, {
+          poll: {
+            name: pollName,
+            values: safeOptions,
+            selectableCount: selectableCount
+          }
+        });
+      } catch (errSecond) {
+        console.warn(`[Poll Saluran] Polling interaktif native tidak didukung server di saluran (${errSecond.message}). Mengirim Polling Teks Interaktif...`);
+        const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
+        let textPoll = `📊 *${pollName}*\n`;
+        textPoll += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        safeOptions.forEach((opt, idx) => {
+          const badge = numEmojis[idx] || `[${idx + 1}]`;
+          textPoll += `${badge} ${opt}\n`;
+        });
+        textPoll += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+        textPoll += `💡 _Beri reaksi emoji (reaction) atau tinggalkan balasan dengan nomor pilihanmu!_`;
+        return await sockInstance.sendMessage(targetJid, { text: textPoll });
+      }
+    }
+    if (selectableCount === 0) {
+      try {
+        return await sockInstance.sendMessage(targetJid, {
+          poll: {
+            name: pollName,
+            values: safeOptions,
+            selectableCount: 1
+          }
+        });
+      } catch (eRetry) {
+        throw errFirst;
+      }
     }
     throw errFirst;
   }
@@ -680,11 +726,14 @@ async function handleIncomingMessage(msg) {
     userCooldownMap.set(sender, now);
   }
 
-  // Cek apakah bot di-tag/mention di dalam obrolan
+  // Cek apakah bot di-tag/mention atau di-reply/quote di dalam obrolan
   const botNumber = sock.user ? sock.user.id.split(':')[0] : '';
   const botJid = botNumber ? `${botNumber}@s.whatsapp.net` : '';
-  const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  const isBotMentioned = (botJid && mentionedJids.includes(botJid)) || (botNumber && trimmedText.includes(`@${botNumber}`));
+  const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+  const mentionedJids = contextInfo?.mentionedJid || [];
+  const quotedParticipant = contextInfo?.participant ? contextInfo.participant.split(':')[0] : '';
+  const isBotQuoted = Boolean(quotedParticipant && botNumber && quotedParticipant.includes(botNumber));
+  const isBotMentioned = (botJid && mentionedJids.includes(botJid)) || (botNumber && trimmedText.includes(`@${botNumber}`)) || isBotQuoted;
 
   if (isBotMentioned) {
     // Bersihkan mention (@botNumber) dari teks agar bisa diparse sebagai perintah
@@ -696,6 +745,7 @@ async function handleIncomingMessage(msg) {
     // Perintah yang bisa dipicu via @mention di grup
     const mentionTriggerCommands = [
       'all', 'pollall', 'poll', 'polling', 'dosen', 'polldosen',
+      'tagall', 'hidetag', 'semua',
       'jadwal', 'jadwala', 'jadwalb', 'jadwali',
       'today', 'hariini', 'tugas', 'task',
       'listdosen', 'menu', 'help', 'ai', 'tanya',
@@ -801,7 +851,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task', 'reset', 'clear'];
+  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task', 'reset', 'clear'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -1097,6 +1147,47 @@ _${prefix}ai ada tugas apa aja minggu ini?_`;
       }
 
       await reply(`🆔 *ID Chat Ini:* \n\`${remoteJid}\`${extraInfo}\n\nSalin ID di atas dan gunakan perintah:\n*${prefix}addtarget ${remoteJid}* untuk mendaftarkannya sebagai target kirim.`);
+      break;
+    }
+
+    case 'tagall':
+    case 'hidetag':
+    case 'semua': {
+      if (!remoteJid.endsWith('@g.us')) {
+        await reply('❌ Perintah ini hanya dapat digunakan di dalam Grup WhatsApp.');
+        break;
+      }
+      try {
+        await react('📢');
+        const groupMeta = await sock.groupMetadata(remoteJid);
+        const participants = (groupMeta.participants || []).map(p => p.id);
+        const groupName = groupMeta.subject || 'Grup';
+        const pesanPengumuman = query || 'Perhatian seluruh anggota grup!';
+
+        if (command === 'hidetag') {
+          // Hidetag: Teks bersih tanpa rentetan mention, tapi semua anggota grup tetap ternotifikasi
+          await sock.sendMessage(remoteJid, {
+            text: `📢 *[PENGUMUMAN ${groupName.toUpperCase()}]*\n\n${pesanPengumuman}`,
+            mentions: participants
+          });
+        } else {
+          // Tagall: Tampilkan daftar mention seluruh anggota
+          let tagText = `📢 *[PENGUMUMAN ${groupName.toUpperCase()}]*\n`;
+          tagText += `📌 *Pesan:* ${pesanPengumuman}\n\n`;
+          tagText += `👥 *Total Anggota (${participants.length}):*\n`;
+          participants.forEach((p, idx) => {
+            const num = p.split('@')[0];
+            tagText += `▫️ ${idx + 1}. @${num}\n`;
+          });
+          await sock.sendMessage(remoteJid, {
+            text: tagText,
+            mentions: participants
+          });
+        }
+      } catch (errTag) {
+        console.error('[TagAll Error]:', errTag.message);
+        await reply(`❌ Gagal memanggil anggota: ${errTag.message}`);
+      }
       break;
     }
 

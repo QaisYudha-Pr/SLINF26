@@ -62,10 +62,10 @@ function saveFacts() {
 loadSessions();
 loadFacts();
 
-// TTL 24 Jam untuk sesi aktif
-const SESSION_TTL = 24 * 60 * 60 * 1000;
+// TTL 10 Menit untuk sesi percakapan aktif (sesuai jeda waktu mengobrol)
+const SESSION_TTL = 10 * 60 * 1000;
 
-// Bersihkan sesi kadaluarsa berkala (setiap 30 menit)
+// Bersihkan sesi kadaluarsa berkala (setiap 5 menit)
 setInterval(() => {
   const now = Date.now();
   let modified = false;
@@ -76,7 +76,7 @@ setInterval(() => {
     }
   }
   if (modified) saveSessionsDebounced();
-}, 30 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 /**
  * Mengambil sesi percakapan
