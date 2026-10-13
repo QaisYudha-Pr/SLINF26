@@ -2,11 +2,11 @@
 
 [![Node.js Version](https://img.shields.io/badge/Node.js-v20%2B-green.svg)](https://nodejs.org/)
 [![Baileys Engine](https://img.shields.io/badge/Baileys-WhatsApp%20Web%20API-blue.svg)](https://github.com/WhiskeySockets/Baileys)
-[![Gemini Engine](https://img.shields.io/badge/Google%20Gemini-3.8--Flash-orange.svg)](https://aistudio.google.com/)
+[![Gemini Engine](https://img.shields.io/badge/Google%20Gemini-3.5--Flash--Lite-orange.svg)](https://aistudio.google.com/)
 [![Database](https://img.shields.io/badge/Database-Supabase%20Cloud%20PostgreSQL-3ECF8E.svg)](https://supabase.com/)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)]()
 
-**Alters** adalah asisten AI akademik dan bot manajemen saluran/grup WhatsApp modern berbasis **Node.js** dan **@whiskeysockets/baileys**. Ditenagai oleh **Google Gemini 3.8 Flash**, bot ini dirancang untuk mendampingi mahasiswa dan pengurus kelas dalam mengelola perkuliahan: mulai dari tanya jawab materi cerdas, pencatatan tugas berbasis bahasa alami, pengingat deadline otomatis (DM/Grup/Saluran), polling presensi dosen, OCR jadwal kuliah, hingga siaran harian otomatis.
+**Alters** adalah asisten AI akademik dan bot manajemen saluran/grup WhatsApp modern berbasis **Node.js** dan **@whiskeysockets/baileys**. Ditenagai oleh **Google Gemini 3.5 Flash-Lite**, bot ini dirancang untuk mendampingi mahasiswa dan pengurus kelas dalam mengelola perkuliahan: mulai dari tanya jawab materi cerdas, pencatatan tugas berbasis bahasa alami, pengingat deadline otomatis (DM/Grup/Saluran), polling presensi dosen, OCR jadwal kuliah, hingga siaran harian otomatis.
 
 ---
 
@@ -26,7 +26,7 @@
 ## ✨ Fitur Utama
 
 ### 🧠 1. Asisten AI Edukasi "Alters" & Copilot Percakapan
-- **Gemini 3.8 Flash Engine**: Pemrosesan ultra-cepat tanpa artificial delay, hemat kuota token, dan ramah resource (cocok untuk VPS maupun Termux).
+- **Gemini 3.5 Flash-Lite Engine (100% Free Tier)**: Pemrosesan kilat (~1.6 detik) tanpa delay, kuota jauh lebih longgar di tier gratis, bebas dari kendala high demand spike, dan ramah resource (cocok untuk VPS maupun Termux).
 - **Pemahaman Konteks & Slang Mahasiswa**: Paham bahasa santai, istilah akademik (*basdat, matdis, alpro, jarkom, rpl*), dan kondisi kelas (*dosen kosong, diundur, cancel, ngaret, dimajuin*).
 - **Autonomous Action Execution**: AI tidak hanya membalas teks, tetapi bisa langsung mengeksekusi aksi database (mencatat tugas, menandai tugas selesai tanpa perlu ID, atau membuat pengingat custom) cukup dari obrolan santai!
 - **Sistem Memori Ganda**:
@@ -184,7 +184,7 @@ Berikut adalah penjelasan setiap baris konfigurasi yang tersedia:
 | `autoSend` | Pengaturan cron siaran otomatis rekap pagi (07:00 WIB). |
 | `defaultLecturers` | Daftar dosen default untuk polling presensi harian `!all`. |
 | `geminiApiKey` | Kunci API Google Gemini (AI Studio). |
-| `geminiModel` | Model AI yang digunakan (Rekomendasi: `models/gemini-3.8-flash`). |
+| `geminiModel` | Model AI yang digunakan (Rekomendasi Free: `models/gemini-3.5-flash-lite`). |
 | `supabase` | Kredensial URL & Anon Key Supabase untuk sinkronisasi database cloud tugas (opsional). |
 | `reminder` | Pengingat rekap tugas otomatis harian (default: 19:00 WIB). |
 | `groupSecurity.adminOnlyManagement` | Jika `true`, hanya admin grup yang bisa menambah/menghapus tugas dan mengubah jadwal di grup. |

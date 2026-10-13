@@ -20,7 +20,7 @@
     "url": "https://YOUR_PROJECT_ID.supabase.co",
     "anonKey": "YOUR_SUPABASE_ANON_KEY"
   },
-  "geminiModel": "models/gemini-3.8-flash",
+  "geminiModel": "models/gemini-3.5-flash-lite",
   "reminder": {
     "enabled": true,
     "cronTime": "0 19 * * *",

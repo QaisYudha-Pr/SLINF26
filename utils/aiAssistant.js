@@ -374,15 +374,14 @@ Jika menyuruh restart bot:
 
 Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu).`;
 
-  const preferredModel = config.geminiModel || 'models/gemini-3.8-flash';
+  const preferredModel = config.geminiModel || 'models/gemini-3.5-flash-lite';
   const defaultModels = [
     preferredModel,
-    'models/gemini-3.8-flash',
-    'models/gemini-2.5-flash',
-    'models/gemini-2.5-flash-lite',
+    'models/gemini-3.5-flash-lite',
+    'models/gemini-flash-lite-latest',
     'models/gemini-3.5-flash',
-    'models/gemini-flash-latest',
-    'models/gemini-pro-latest'
+    'models/gemini-3.8-flash',
+    'models/gemini-flash-latest'
   ];
   const models = [...new Set(defaultModels)];
 
@@ -452,7 +451,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payloadStr,
-        signal: AbortSignal.timeout(12000)
+        signal: AbortSignal.timeout(7500)
       });
 
       if (res.status === 200) {

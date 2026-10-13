@@ -70,7 +70,7 @@ async function runDiagnostics(sock = null) {
 
   // 2. CEK GEMINI AI API (Konektivitas, API Key, Latency)
   const geminiKey = config.geminiApiKey || process.env.GEMINI_API_KEY;
-  const geminiModel = config.geminiModel || 'models/gemini-3.8-flash';
+  const geminiModel = config.geminiModel || 'models/gemini-3.5-flash-lite';
   report.checks.geminiAi.model = geminiModel;
 
   if (!geminiKey || geminiKey.includes('YOUR_GEMINI') || geminiKey.includes('AIzaSy...')) {
