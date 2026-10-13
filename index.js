@@ -143,26 +143,27 @@ module.exports = {
   if (!sock || !jid) return null;
   const isNewsletter = (jid || '').endsWith('@newsletter');
   const safeOptions = (pollOptions || []).slice(0, 12);
-  const msgOptions = {};
-  if (isNewsletter) msgOptions.newsletter = true;
+  if (isNewsletter) {
+    const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
+    let textPoll = \`📊 *\${pollTitle}*\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n\`;
+    safeOptions.forEach((opt, idx) => {
+      textPoll += \`\${numEmojis[idx] || '[' + (idx + 1) + ']'} \${opt}\\n\`;
+    });
+    textPoll += \`\\n━━━━━━━━━━━━━━━━━━━━━\\n💡 _Beri reaksi emoji atau tinggalkan balasan pilihanmu!_\`;
+    return await sock.sendMessage(jid, { text: textPoll });
+  }
   try {
     return await sock.sendMessage(jid, {
       poll: { name: pollTitle, values: safeOptions, selectableCount }
-    }, msgOptions);
+    });
   } catch (errFirst) {
-    if (isNewsletter) {
+    if (selectableCount === 0) {
       try {
         return await sock.sendMessage(jid, {
-          poll: { name: pollTitle, values: safeOptions, selectableCount }
+          poll: { name: pollTitle, values: safeOptions, selectableCount: 1 }
         });
-      } catch (errSecond) {
-        const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
-        let textPoll = \`📊 *\${pollTitle}*\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n\`;
-        safeOptions.forEach((opt, idx) => {
-          textPoll += \`\${numEmojis[idx] || '[' + (idx + 1) + ']'} \${opt}\\n\`;
-        });
-        textPoll += \`\\n━━━━━━━━━━━━━━━━━━━━━\\n💡 _Kirim reaksi emoji atau balas pilihan Anda!_\`;
-        return await sock.sendMessage(jid, { text: textPoll });
+      } catch (e2) {
+        throw errFirst;
       }
     }
     throw errFirst;
@@ -335,17 +336,29 @@ function findForwardedNewsletterInfo(obj) {
  * @param selectableCount 1 untuk single-choice, 0 untuk multiple-choice (izinkan beberapa jawaban)
  */
 async function sendNativePoll(sockInstance, targetJid, pollName, pollOptions, selectableCount = 1) {
+  if (!sockInstance || !targetJid) return null;
   const isNewsletter = (targetJid || '').endsWith('@newsletter');
-
-  // Batasi maksimal 12 pilihan (batas WhatsApp)
   const safeOptions = (pollOptions || []).slice(0, 12);
 
-  const msgOptions = {};
+  // 📢 KHUSUS SALURAN WHATSAPP (@newsletter):
+  // WhatsApp Channels TIDAK mendukung tipe pesan polling native (server WhatsApp mengabaikan / drop pollCreationMessage).
+  // Oleh karena itu, di Saluran kita kirimkan format Polling Teks Interaktif dengan nomor emoji & instruksi reaksi!
   if (isNewsletter) {
-    // Saluran memerlukan flag newsletter agar tidak di-reject server
-    msgOptions.newsletter = true;
+    const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
+    let textPoll = `📊 *${pollName}*\n`;
+    textPoll += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    safeOptions.forEach((opt, idx) => {
+      const badge = numEmojis[idx] || `[${idx + 1}]`;
+      textPoll += `${badge} ${opt}\n`;
+    });
+    textPoll += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+    textPoll += `💡 _Beri reaksi emoji (reaction) pada pesan ini atau tinggalkan komentar sesuai nomor pilihanmu!_`;
+    console.log(`📢 [Poll Saluran Terkirim] Mengirim polling teks interaktif ke saluran ${targetJid}`);
+    return await sockInstance.sendMessage(targetJid, { text: textPoll });
   }
 
+  // 👥 GRUP (@g.us) & CHAT PRIBADI:
+  // Mendukung polling interaktif asli WhatsApp 100%!
   try {
     return await sockInstance.sendMessage(targetJid, {
       poll: {
@@ -353,32 +366,8 @@ async function sendNativePoll(sockInstance, targetJid, pollName, pollOptions, se
         values: safeOptions,
         selectableCount: selectableCount
       }
-    }, msgOptions);
+    });
   } catch (errFirst) {
-    if (isNewsletter) {
-      try {
-        console.warn(`[Poll Newsletter Fallback] Coba tanpa flag newsletter untuk ${targetJid}: ${errFirst.message}`);
-        return await sockInstance.sendMessage(targetJid, {
-          poll: {
-            name: pollName,
-            values: safeOptions,
-            selectableCount: selectableCount
-          }
-        });
-      } catch (errSecond) {
-        console.warn(`[Poll Saluran] Polling interaktif native tidak didukung server di saluran (${errSecond.message}). Mengirim Polling Teks Interaktif...`);
-        const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
-        let textPoll = `📊 *${pollName}*\n`;
-        textPoll += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-        safeOptions.forEach((opt, idx) => {
-          const badge = numEmojis[idx] || `[${idx + 1}]`;
-          textPoll += `${badge} ${opt}\n`;
-        });
-        textPoll += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
-        textPoll += `💡 _Beri reaksi emoji (reaction) atau tinggalkan balasan dengan nomor pilihanmu!_`;
-        return await sockInstance.sendMessage(targetJid, { text: textPoll });
-      }
-    }
     if (selectableCount === 0) {
       try {
         return await sockInstance.sendMessage(targetJid, {
@@ -1266,8 +1255,8 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
       let isSplitMode = false;
       let rawLecturersQuery = query;
 
-      // Cek apakah ada kata kunci 'target', 'targets', 'saluran', 'channel', 'split', 'pisah'
-      if (args.some(a => ['target', 'targets', 'saluran', 'channel', 'semua'].includes(a.toLowerCase()))) {
+      // Cek apakah ada kata kunci 'target', 'targets', 'saluran', 'channel', 'split', 'pisah', 'testing'
+      if (args.some(a => ['target', 'targets', 'saluran', 'channel', 'semua', 'testing'].includes(a.toLowerCase()))) {
         isBroadcastAll = true;
       }
       if (args.some(a => ['split', 'pisah', 'each', 'satuan'].includes(a.toLowerCase()))) {
@@ -1276,7 +1265,7 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
 
       // Bersihkan kata kunci mode dari rawLecturersQuery
       rawLecturersQuery = rawLecturersQuery
-        .replace(/\b(target|targets|saluran|channel|semua|split|pisah|each|satuan)\b/gi, '')
+        .replace(/\b(target|targets|saluran|channel|semua|split|pisah|each|satuan|testing)\b/gi, '')
         .trim();
 
       let lecturers = [];
@@ -1304,13 +1293,22 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
       }
 
       const dt = getIndonesianDateTime();
-      const destinationJids = isBroadcastAll 
+      const isPrivateChat = remoteJid.endsWith('@s.whatsapp.net');
+      const shouldBroadcast = isBroadcastAll || (isPrivateChat && userIsOwner && config.targetJids && config.targetJids.length > 0);
+
+      let destinationJids = shouldBroadcast 
         ? ((config.targetJids && config.targetJids.length > 0) ? config.targetJids : [remoteJid]) 
         : [remoteJid];
 
-      if (isBroadcastAll && (!config.targetJids || config.targetJids.length === 0)) {
+      // Jika pengguna secara spesifik menyebut 'saluran', 'channel', atau 'testing', saring hanya ke saluran
+      if (args.some(a => ['saluran', 'channel', 'testing'].includes(a.toLowerCase()))) {
+        const onlyNl = (config.targetJids || []).filter(t => t.endsWith('@newsletter'));
+        if (onlyNl.length > 0) destinationJids = onlyNl;
+      }
+
+      if (shouldBroadcast && (!config.targetJids || config.targetJids.length === 0)) {
         await reply(`⚠️ Belum ada target grup/saluran di config. Polling dikirim ke obrolan ini.`);
-      } else if (isBroadcastAll) {
+      } else if (shouldBroadcast) {
         await reply(`⏳ Mengirim polling kehadiran dosen ke ${destinationJids.length} target...`);
       }
 
@@ -1357,7 +1355,7 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
         }
       }
 
-      if (isBroadcastAll && config.targetJids && config.targetJids.length > 0) {
+      if (shouldBroadcast && config.targetJids && config.targetJids.length > 0) {
         await reply(`✅ Berhasil mengirim polling kehadiran resmi ke ${destinationJids.length} target terdaftar!`);
       }
       break;
@@ -1398,7 +1396,7 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
       let isBroadcastAll = false;
       let namaDosen = query.trim();
 
-      if (args[1] && (args[1].toLowerCase() === 'all' || args[1].toLowerCase() === 'target' || args[1].toLowerCase() === 'targets')) {
+      if (args[1] && (['all', 'target', 'targets', 'saluran', 'channel', 'testing', 'semua'].includes(args[1].toLowerCase()))) {
         isBroadcastAll = true;
         namaDosen = query.slice(args[1].length).trim();
       }
@@ -1413,11 +1411,18 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
       }
 
       const pollValues = ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'];
+      const isPrivateChat = remoteJid.endsWith('@s.whatsapp.net');
+      const shouldBroadcast = isBroadcastAll || (isPrivateChat && userIsOwner && config.targetJids && config.targetJids.length > 0);
 
       try {
-        if (isBroadcastAll) {
-          const targets = config.targetJids || [];
-          if (targets.length === 0) {
+        if (shouldBroadcast) {
+          let targets = (config.targetJids && config.targetJids.length > 0) ? config.targetJids : [remoteJid];
+          if (args[1] && ['saluran', 'channel', 'testing'].includes(args[1].toLowerCase())) {
+            const onlyNl = (config.targetJids || []).filter(t => t.endsWith('@newsletter'));
+            if (onlyNl.length > 0) targets = onlyNl;
+          }
+
+          if (!config.targetJids || config.targetJids.length === 0) {
             await reply(`⚠️ Belum ada target yang didaftarkan di config. Polling dikirim ke chat ini saja.`);
             await sendNativePoll(sock, remoteJid, `🎓 Kehadiran: ${namaDosen}`, pollValues, 1);
             return;
@@ -1454,9 +1459,9 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
       // Periksa kata kunci broadcast di awal query (sebelum format '|')
       const firstPipeIdx = rawPollQuery.indexOf('|');
       const prefixPart = firstPipeIdx >= 0 ? rawPollQuery.slice(0, firstPipeIdx) : rawPollQuery;
-      if (/\b(target|targets|semua|all|saluran|channel)\b/i.test(prefixPart)) {
+      if (/\b(target|targets|semua|all|saluran|channel|testing)\b/i.test(prefixPart)) {
         pollIsBroadcast = true;
-        rawPollQuery = rawPollQuery.replace(/\b(target|targets|semua|all|saluran|channel)\b/gi, '').replace(/^[\s|]+/, '').trim();
+        rawPollQuery = rawPollQuery.replace(/\b(target|targets|semua|all|saluran|channel|testing)\b/gi, '').replace(/^[\s|]+/, '').trim();
       }
 
       const parts = rawPollQuery.split('|').map(p => p.trim()).filter(Boolean);
@@ -1478,9 +1483,17 @@ ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
         return;
       }
 
+      const isPrivateChat = remoteJid.endsWith('@s.whatsapp.net');
+      const shouldBroadcast = pollIsBroadcast || (isPrivateChat && userIsOwner && config.targetJids && config.targetJids.length > 0);
+
       try {
-        if (pollIsBroadcast) {
-          const targets = (config.targetJids && config.targetJids.length > 0) ? config.targetJids : [remoteJid];
+        if (shouldBroadcast) {
+          let targets = (config.targetJids && config.targetJids.length > 0) ? config.targetJids : [remoteJid];
+          if (/\b(saluran|channel|testing)\b/i.test(prefixPart)) {
+            const onlyNl = (config.targetJids || []).filter(t => t.endsWith('@newsletter'));
+            if (onlyNl.length > 0) targets = onlyNl;
+          }
+
           if (!config.targetJids || config.targetJids.length === 0) {
             await reply(`⚠️ Belum ada target terdaftar. Polling dikirim ke obrolan ini saja.`);
           } else {

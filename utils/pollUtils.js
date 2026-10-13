@@ -21,11 +21,25 @@ async function sendNativePoll(sock, jid, pollTitle, pollOptions, selectableCount
   const isNewsletter = (jid || '').endsWith('@newsletter');
   const safeOptions = (pollOptions || []).slice(0, 12);
 
-  const msgOptions = {};
+  // 📢 KHUSUS SALURAN WHATSAPP (@newsletter):
+  // WhatsApp Channels TIDAK mendukung tipe pesan polling native (server WhatsApp mengabaikan / drop pollCreationMessage).
+  // Oleh karena itu, di Saluran kita kirimkan format Polling Teks Interaktif dengan nomor emoji & instruksi reaksi!
   if (isNewsletter) {
-    msgOptions.newsletter = true;
+    const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
+    let textPoll = `📊 *${pollTitle}*\n`;
+    textPoll += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    safeOptions.forEach((opt, idx) => {
+      const badge = numEmojis[idx] || `[${idx + 1}]`;
+      textPoll += `${badge} ${opt}\n`;
+    });
+    textPoll += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
+    textPoll += `💡 _Beri reaksi emoji (reaction) pada pesan ini atau tinggalkan komentar sesuai nomor pilihanmu!_`;
+    console.log(`📢 [Poll Saluran Terkirim] Mengirim polling teks interaktif ke saluran ${jid}`);
+    return await sock.sendMessage(jid, { text: textPoll });
   }
 
+  // 👥 GRUP (@g.us) & CHAT PRIBADI:
+  // Mendukung polling interaktif asli WhatsApp 100%!
   try {
     return await sock.sendMessage(jid, {
       poll: {
@@ -33,34 +47,8 @@ async function sendNativePoll(sock, jid, pollTitle, pollOptions, selectableCount
         values: safeOptions,
         selectableCount: selectableCount
       }
-    }, msgOptions);
+    });
   } catch (errFirst) {
-    if (isNewsletter) {
-      try {
-        // Coba kirim tanpa flag newsletter jika reject
-        return await sock.sendMessage(jid, {
-          poll: {
-            name: pollTitle,
-            values: safeOptions,
-            selectableCount: selectableCount
-          }
-        });
-      } catch (errSecond) {
-        console.warn(`[Poll Saluran] Polling native tidak didukung di saluran (${errSecond.message}). Mengirim Polling Teks Interaktif...`);
-        // Fallback format polling teks interaktif rapi untuk saluran WhatsApp
-        const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '1️⃣1️⃣', '1️⃣2️⃣'];
-        let textPoll = `📊 *${pollTitle}*\n`;
-        textPoll += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-        safeOptions.forEach((opt, idx) => {
-          const badge = numEmojis[idx] || `[${idx + 1}]`;
-          textPoll += `${badge} ${opt}\n`;
-        });
-        textPoll += `\n━━━━━━━━━━━━━━━━━━━━━\n`;
-        textPoll += `💡 _Beri reaksi emoji (reaction) pada pesan ini atau tinggalkan komentar sesuai nomor pilihanmu!_`;
-        return await sock.sendMessage(jid, { text: textPoll });
-      }
-    }
-
     // Jika di grup / private dan mode multi-choice ditolak, coba single-choice
     if (selectableCount === 0) {
       try {
