@@ -4,6 +4,7 @@ const { getIndonesianDateTime, getRenderedMessageForDay } = require('./utils/for
 
 let activeCronTask = null;
 let activeReminderCronTask = null;
+let activeCustomReminderCronTask = null;
 
 let taskManagerModule = {
   getTasks: async () => []
@@ -12,6 +13,12 @@ try {
   taskManagerModule = require('./utils/taskManager');
 } catch (e) {}
 const { getTasks } = taskManagerModule;
+
+let reminderManager = { checkDueReminders: () => [] };
+try {
+  reminderManager = require('./utils/reminderManager');
+} catch (e) {}
+const { checkDueReminders } = reminderManager;
 
 /**
  * Mengirim pesan harian atau pengumuman ke target tertentu atau semua target
@@ -227,6 +234,51 @@ ${isFullSuccess ? '✅ Semua saluran & grup berhasil menerima siaran harian tepa
       );
     }
   }
+
+  // 3. Cron Pengingat Deadline & Agenda Kustom (Cek setiap menit)
+  activeCustomReminderCronTask = cron.schedule(
+    '* * * * *',
+    async () => {
+      try {
+        const dueList = checkDueReminders();
+        if (dueList && dueList.length > 0) {
+          const cfg = loadConfig();
+          for (const item of dueList) {
+            const card = `╭───「 ⏰ *PENGINGAT DEADLINE & AGENDA* 」
+│ 
+│ 📌 *Agenda:* ${item.text}
+│ 📅 *Jadwal:* ${item.day ? item.day.toUpperCase() : 'Hari ini'} (Pukul ${item.time} WIB)
+│ 👤 *Pembuat:* ${item.creatorJid ? '@' + item.creatorJid.split('@')[0] : 'Sistem'}
+│ 
+╰──────────────────────────────────────────
+💡 _Pengingat otomatis diatur melalui bot / Alters AI._`;
+
+            const targets = (Array.isArray(item.targets) && item.targets.length > 0)
+              ? item.targets
+              : (item.targetJid ? [item.targetJid] : (cfg.targetJids || []));
+
+            for (const target of targets) {
+              try {
+                await sock.sendMessage(target, { 
+                  text: card,
+                  mentions: item.creatorJid ? [item.creatorJid] : []
+                });
+                console.log(`⏰ [CustomReminder] Terkirim: "${item.text}" -> ${target}`);
+              } catch (eSend) {
+                console.error(`[CustomReminder] Gagal kirim ke ${target}:`, eSend.message);
+              }
+            }
+          }
+        }
+      } catch (errCustom) {
+        console.error('[Scheduler] Gagal memproses custom reminder:', errCustom.message);
+      }
+    },
+    {
+      scheduled: true,
+      timezone
+    }
+  );
 }
 
 function stopScheduler() {
@@ -237,6 +289,10 @@ function stopScheduler() {
   if (activeReminderCronTask) {
     activeReminderCronTask.stop();
     activeReminderCronTask = null;
+  }
+  if (activeCustomReminderCronTask) {
+    activeCustomReminderCronTask.stop();
+    activeCustomReminderCronTask = null;
   }
   console.log('[Scheduler] Semua cron scheduler dihentikan.');
 }

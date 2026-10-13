@@ -4,6 +4,7 @@ const { getSchedules, addScheduleItem, deleteScheduleItem, saveBatchSchedule, fo
 let taskManager = {
   getTasks: async () => [],
   addTask: async () => ({ success: false, task: {} }),
+  updateTask: async () => ({ success: false }),
   markTaskDone: async () => ({ success: false }),
   deleteTask: async () => ({ success: false }),
   formatTaskList: async () => 'Daftar tugas kosong',
@@ -12,7 +13,25 @@ let taskManager = {
 try {
   taskManager = require('./taskManager');
 } catch (e) {}
-const { addTask, markTaskDone, deleteTask, getTasks, formatTaskList, checkDatabaseStatus, getLecturers } = taskManager;
+const { addTask, updateTask, markTaskDone, deleteTask, getTasks, formatTaskList, checkDatabaseStatus, getLecturers } = taskManager;
+
+let reminderManager = {
+  getCustomReminders: () => [],
+  addCustomReminder: () => ({ id: 1 }),
+  deleteCustomReminder: () => true,
+  checkDueReminders: () => [],
+  formatRemindersList: () => 'Belum ada pengingat kustom.'
+};
+try {
+  reminderManager = require('./reminderManager');
+} catch (e) {}
+const {
+  getCustomReminders,
+  addCustomReminder,
+  deleteCustomReminder,
+  formatRemindersList
+} = reminderManager;
+
 const { loadConfig, saveConfig } = require('../configManager');
 const { startScheduler, stopScheduler, sendDailyBroadcast } = require('../scheduler');
 
@@ -103,6 +122,8 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   const scheduleSummary = JSON.stringify(schedules);
   const pendingTasks = await getTasks('A', 'pending').catch(() => []);
   const tasksSummary = JSON.stringify(pendingTasks);
+  const activeCustomReminders = getCustomReminders().filter(r => !r.fired);
+  const customRemindersSummary = JSON.stringify(activeCustomReminders);
 
   const DAYS_ORDER = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
   const todayKey = (dt.dayKey || dt.hari || 'senin').toLowerCase();
@@ -238,6 +259,8 @@ atau jika menyuruh mematikan:
 - Data Tugas Aktif Saat Ini: ${tasksSummary}
 - Catat tugas baru (contoh: "catat tugas basdat bikin ERD deadline jumat jam 23.59"):
 [[ACTION:ADD_TASK:{"kelas":"A","matkul":"Basis Data","judul":"Bikin ERD","deadline":"Jumat jam 23:59"}]]
+- Ubah / update tugas yang sudah ada (contoh: "ubah deadline tugas ID 1 jadi besok jam 23.59", "ganti batas tugas 2 jadi jumat", "ubah judul tugas 1 jadi Buat DFD"):
+[[ACTION:UPDATE_TASK:{"id":1,"deadline":"Besok jam 23:59"}]]
 - Tandai tugas selesai (contoh: "tugas ID 2 udah kelar"):
 [[ACTION:DONE_TASK:{"id":2}]]
 - Menghapus tugas (contoh: "hapus tugas ID 2"):
@@ -245,7 +268,23 @@ atau jika menyuruh mematikan:
 - Minta tampilkan daftar tugas lengkap:
 [[ACTION:GET_TASKS:{"kelas":"A"}]]
 
-6. Polling Kehadiran Dosen & Polling Bebas:
+6. Pengingat Deadline & Agenda Kustom Fleksibel (Custom Reminder):
+- Data Pengingat Kustom Aktif: ${customRemindersSummary}
+- Pasang pengingat kustom baru (contoh: "ingatkan besok jam 08:00 ada kuis DFA", "pasang pengingat jam 19:30 kumpul laporan", "ingatkan hari jumat jam 23:00"):
+[[ACTION:ADD_REMINDER:{"text":"Kuis DFA","time":"08:00","day":"besok"}]]
+(Format time: "HH:MM", format day opsional: "besok", "senin", "jumat", dll).
+- Hapus pengingat kustom (contoh: "hapus pengingat ID 1"):
+[[ACTION:DELETE_REMINDER:{"id":1}]]
+- Tampilkan daftar pengingat aktif (contoh: "daftar pengingat", "ada pengingat apa aja?"):
+[[ACTION:GET_REMINDERS:{}]]
+
+7. Pengingat Tugas Otomatis Malam Hari & Pengaturan Bot ('/ai ubah ...'):
+- Ubah pengingat tugas harian malam (contoh: "ubah pengingat tugas malam jadi jam 20:00", "matikan pengingat tugas"):
+[[ACTION:SET_REMINDER:{"enabled":true,"time":"20:00"}]] atau [[ACTION:SET_REMINDER:{"enabled":false}]]
+- Ubah prefix perintah (contoh: "ubah prefix jadi #", "ganti awalan perintah jadi ."):
+[[ACTION:SET_CONFIG:{"prefix":"#"}]]
+
+8. Polling Kehadiran Dosen & Polling Bebas:
 ⚠️ ATURAN SANGAT PENTING PEMILIHAN AKSI (JANGAN SALAH!):
 - Jika pengguna meminta "POLL", "POLLING", "PRESENSI", atau "KEHADIRAN DOSEN" (contoh: "bikin polling dosen", "kirimkan siaran polling dosen ke siaran testing", "poll kehadiran ke saluran", "bikin poll dosen Bu Woro"):
   ➔ SELALU GUNAKAN [[ACTION:POLL_DOSEN:...]]!
@@ -273,14 +312,29 @@ atau jika menyuruh mematikan:
 • Permintaan: "kirim siaran agenda hari ini" (tanpa kata poll/polling)
   Tindakan: Kirim template teks agenda harian.
   Aksi: [[ACTION:SEND_BROADCAST:{"day":"${todayKey}","target":"semua"}]]
+• Permintaan: "ubah deadline tugas 1 jadi besok jam 23.59" atau "/ai ubah batas tugas 1 jadi jumat malam"
+  Tindakan: Ubah deadline tugas dengan ID 1.
+  Aksi: [[ACTION:UPDATE_TASK:{"id":1,"deadline":"Besok jam 23:59"}]]
+• Permintaan: "ingatkan besok jam 7 pagi kuis dfa" atau "/ai pasang pengingat kuis dfa jam 07:00"
+  Tindakan: Buat pengingat kustom untuk besok jam 07:00.
+  Aksi: [[ACTION:ADD_REMINDER:{"text":"Kuis DFA","time":"07:00","day":"besok"}]]
+• Permintaan: "ubah jam autosend jadi jam 06:30" atau "/ai ganti siaran otomatis jam 6 pagi"
+  Tindakan: Atur waktu autosend ke 06:30 WIB.
+  Aksi: [[ACTION:SET_AUTOSEND:{"enabled":true,"time":"06:30"}]]
+• Permintaan: "ubah jam pengingat tugas malam jadi jam 20:00"
+  Tindakan: Atur waktu pengingat tugas harian ke 20:00 WIB.
+  Aksi: [[ACTION:SET_REMINDER:{"enabled":true,"time":"20:00"}]]
+• Permintaan: "ubah prefix jadi #" atau "/ai ganti awalan perintah jadi ."
+  Tindakan: Ubah prefix command bot.
+  Aksi: [[ACTION:SET_CONFIG:{"prefix":"#"}]]
 
-8. Status & Pemeliharaan:
+9. Status & Pemeliharaan:
 Jika menanyakan status sistem / bot / database:
 [[ACTION:SYSTEM:{"action":"status"}]]
 Jika menyuruh restart bot:
 [[ACTION:SYSTEM:{"action":"restart"}]]
 
-9. KEMAMPUAN MENGINGAT CERDAS (LONG-TERM MEMORY):
+10. KEMAMPUAN MENGINGAT CERDAS (LONG-TERM MEMORY):
 - Jika pengguna memperkenalkan diri atau meminta mengingat fakta (contoh: "namaku Dani", "panggil aku mas ganteng", "aku kelas B", "ingat bahwa deadline DFA diundur", "catat tugas ini..."):
   Sertakan aksi mengingat di akhir pesan:
   [[ACTION:REMEMBER:{"key":"nama_panggilan","value":"Dani"}]] atau
@@ -455,6 +509,63 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
             } else if (actionType === 'GET_TASKS') {
               const listFormatted = await formatTaskList(actionData.kelas || 'A');
               return `${cleanReply}\n\n${listFormatted}`;
+            } else if (actionType === 'UPDATE_TASK') {
+              const updates = {};
+              if (actionData.deadline || actionData.deadline_text) updates.deadline_text = actionData.deadline || actionData.deadline_text;
+              if (actionData.judul) updates.judul = actionData.judul;
+              if (actionData.matkul) updates.matkul = actionData.matkul;
+              if (actionData.status) updates.status = actionData.status;
+
+              const resUpdate = await updateTask(actionData.id, updates);
+              if (resUpdate.success) {
+                const t = resUpdate.task || {};
+                return `${cleanReply}\n\n✏️ *[Tugas Berhasil Diperbarui]*\n▫️ *ID:* ${t.id || actionData.id}\n▫️ *Matkul:* ${t.matkul || '-'}\n📋 *Tugas:* ${t.judul || '-'}\n⏰ *Batas Baru:* ${t.deadline_text || '-'}`;
+              } else {
+                return `${cleanReply}\n\n⚠️ ${resUpdate.message || 'Gagal memperbarui data tugas.'}`;
+              }
+            } else if (actionType === 'ADD_REMINDER') {
+              const newRem = addCustomReminder({
+                text: actionData.text || 'Pengingat Deadline / Agenda',
+                timeStr: actionData.time || '19:00',
+                dayStr: actionData.day || '',
+                targetJid: remoteJid,
+                creatorJid: senderJid
+              });
+              const dayLabel = newRem.day ? ` (Hari: *${newRem.day}*)` : '';
+              return `${cleanReply}\n\n⏰ *[Pengingat Kustom Berhasil Disetel]*\n▫️ *ID:* ${newRem.id}\n📌 *Agenda:* ${newRem.text}\n⏰ *Waktu:* ${newRem.time} WIB${dayLabel}\n\n💡 _Bot akan otomatis mengirimkan pengingat tepat waktu ke chat ini!_`;
+            } else if (actionType === 'DELETE_REMINDER') {
+              const isDel = deleteCustomReminder(actionData.id);
+              if (isDel) {
+                return `${cleanReply}\n\n🗑️ *[Pengingat Dihapus]* Pengingat ID *${actionData.id}* telah berhasil dihapus.`;
+              } else {
+                return `${cleanReply}\n\n⚠️ Pengingat ID *${actionData.id}* tidak ditemukan.`;
+              }
+            } else if (actionType === 'GET_REMINDERS') {
+              const listRem = formatRemindersList();
+              return `${cleanReply}\n\n${listRem}`;
+            } else if (actionType === 'SET_REMINDER') {
+              const cfg = loadConfig();
+              if (!cfg.reminder) cfg.reminder = { enabled: true, cronTime: '0 19 * * *' };
+              if (typeof actionData.enabled === 'boolean') {
+                cfg.reminder.enabled = actionData.enabled;
+              }
+              if (actionData.time && /^\d{1,2}:\d{2}$/.test(actionData.time)) {
+                const [hour, minute] = actionData.time.split(':');
+                cfg.reminder.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
+              }
+              saveConfig(cfg);
+              if (sockInstance) startScheduler(sockInstance);
+              const statusStr = cfg.reminder.enabled ? `DIAKTIFKAN pada jam ${actionData.time || '19:00'} WIB` : 'DINONAKTIFKAN';
+              return `${cleanReply}\n\n⏰ *[Pengingat Tugas Otomatis Diperbarui]* Pengingat tugas malam harian telah *${statusStr}*.`;
+            } else if (actionType === 'SET_CONFIG') {
+              const cfg = loadConfig();
+              let changed = [];
+              if (actionData.prefix) {
+                cfg.prefix = actionData.prefix;
+                changed.push(`Prefix: \`${cfg.prefix}\``);
+              }
+              saveConfig(cfg);
+              return `${cleanReply}\n\n⚙️ *[Pengaturan Bot Diperbarui]*\n${changed.join('\n') || 'Pengaturan berhasil disimpan.'}`;
             }
 
             // 🛡️ Safeguard cerdas untuk query gabungan / abstrak:

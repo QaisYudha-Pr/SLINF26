@@ -189,6 +189,43 @@ async function markTaskDone(taskId) {
 }
 
 /**
+ * Memperbarui data tugas (misal deadline_text, judul, matkul)
+ */
+async function updateTask(taskId, updates = {}) {
+  const tId = parseInt(taskId, 10);
+  if (isNaN(tId)) return { success: false, message: 'ID tugas tidak valid.' };
+
+  try {
+    const res = await fetchSupabase(`tasks?id=eq.${tId}`, {
+      method: 'PATCH',
+      headers: { 'Prefer': 'return=representation' },
+      body: JSON.stringify(updates)
+    });
+
+    if (res && res.ok) {
+      const updated = await res.json();
+      const current = getLocalTasks();
+      const idx = current.findIndex(t => t.id === tId);
+      if (idx >= 0) Object.assign(current[idx], updates);
+      saveLocalTasks(current);
+      return { success: true, task: updated[0] };
+    }
+  } catch (err) {
+    console.warn('⚠️ [Supabase Update Error]:', err.message);
+  }
+
+  // Fallback lokal
+  const current = getLocalTasks();
+  const idx = current.findIndex(t => t.id === tId);
+  if (idx >= 0) {
+    Object.assign(current[idx], updates);
+    saveLocalTasks(current);
+    return { success: true, task: current[idx], isLocal: true };
+  }
+  return { success: false, message: 'Tugas tidak ditemukan.' };
+}
+
+/**
  * Menghapus tugas
  */
 async function deleteTask(taskId) {
@@ -284,6 +321,7 @@ async function checkDatabaseStatus() {
 module.exports = {
   getTasks,
   addTask,
+  updateTask,
   markTaskDone,
   deleteTask,
   formatTaskList,

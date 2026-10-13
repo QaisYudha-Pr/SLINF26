@@ -249,12 +249,30 @@ try {
 const {
   formatTaskList,
   addTask,
+  updateTask,
   markTaskDone,
   deleteTask,
   getTasks,
   checkDatabaseStatus,
   getLecturers
 } = taskManager;
+
+let reminderManager = {
+  getCustomReminders: () => [],
+  addCustomReminder: () => ({ id: 1 }),
+  deleteCustomReminder: () => true,
+  checkDueReminders: () => [],
+  formatRemindersList: () => 'Belum ada pengingat kustom.'
+};
+try {
+  reminderManager = require('./utils/reminderManager');
+} catch (e) {}
+const {
+  getCustomReminders,
+  addCustomReminder,
+  deleteCustomReminder,
+  formatRemindersList
+} = reminderManager;
 let aiAssistantModule = {
   askGeminiAI: async () => '⚠️ Fitur AI sedang disinkronkan.',
   resetSession: () => true,
@@ -722,11 +740,9 @@ async function handleIncomingMessage(msg) {
   const reply = async (text) => {
     try {
       if (!remoteJid.endsWith('@newsletter')) {
-        // 1. Simulasi Kehadiran Manusia: Kirim sinyal "Sedang mengetik..."
-        await sock.sendPresenceUpdate('composing', remoteJid).catch(() => {});
-        await new Promise(r => setTimeout(r, 600)); // Jeda alami manusia
+        sock.sendPresenceUpdate('composing', remoteJid).catch(() => {});
         await sock.sendMessage(remoteJid, { text }, { quoted: msg });
-        await sock.sendPresenceUpdate('paused', remoteJid).catch(() => {});
+        sock.sendPresenceUpdate('paused', remoteJid).catch(() => {});
       } else {
         // Saluran tidak mendukung quote message
         await sock.sendMessage(remoteJid, { text });
@@ -902,7 +918,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'ingatkan', 'pengingat'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -1044,21 +1060,28 @@ async function handleIncomingMessage(msg) {
 
       if (subMenu === 'ai' || subMenu === 'copilot') {
         const text = 
-`╭───「 🤖 *MENU ASISTEN GEMINI AI* 」
+`╭───「 🤖 *MENU ASISTEN ALTERS AI* 」
 │ Prefiks: *${prefix}* atau */*
 ╰──────────────────────────
-• *${prefix}ai <pertanyaan>* ➔ Tanya apa saja ke Gemini AI
+• *${prefix}ai <pertanyaan>* ➔ Tanya apa saja ke Alters (Gemini 3.8 Flash)
+• *${prefix}ai ubah ...* ➔ Perintah santai ubah tugas/pengingat/jadwal
+• *${prefix}ingatkan <jam> | <agenda>* ➔ Pasang pengingat deadline kustom
+• *${prefix}reminders* ➔ Cek daftar pengingat deadline kustom aktif
+• *${prefix}delreminder <id>* ➔ Hapus pengingat kustom
 • *@Bot <pertanyaan>* ➔ Tag bot di grup untuk langsung dijawab
 • *${prefix}ingat* ➔ Cek catatan memori jangka panjang AI tentangmu
 • *${prefix}lupakan <kunci>* ➔ Hapus fakta dari memori jangka panjang
 • *${prefix}reset* ➔ Reset konteks obrolan aktif AI
 • *Kirim Foto/PDF + ${prefix}ai* ➔ Menganalisis & merangkum dokumen
 
-🧠 *Memori Cerdas & Persisten*:
-AI mengingat konteks obrolan panjang & fakta profilmu (nama, kelas, catatan khusus) secara persisten bahkan setelah bot dimuat ulang! Kamu bisa bilang _"AI, ingat namaku Dani dari kelas B ya"_.
+💡 *Contoh Perintah Cepat AI Copilot:*
+• _${prefix}ai ubah deadline tugas 1 jadi besok jam 23.59_
+• _${prefix}ai ingatkan besok jam 7 pagi ada kuis DFA_
+• _${prefix}ai ubah jam autosend jadi jam 06:30_
+• _${prefix}ai ubah pengingat tugas malam jadi jam 20:00_
 
-👑 *Khusus Chat Pribadi (DM) Owner*:
-Bisa langsung chat santai tanpa mengetik tanda prefiks!`;
+⚡ *Respons Cepat*:
+Semua jawaban AI dan perintah dikirim instan tanpa jeda delay buatan!`;
         await reply(text);
         break;
       }
@@ -1745,7 +1768,27 @@ _[tempel/paste teks jadwal kamu di sini]_
         return;
       }
 
-      // 4. Tampilkan daftar tugas (!tugas atau !tugas a atau !tugas b)
+      // 4. !tugas ubah <id> | <deadline baru>
+      if (subCommand === 'ubah' || subCommand === 'edit' || subCommand === 'update') {
+        const payloadStr = query.slice(subCommand.length).trim();
+        const parts = payloadStr.split('|').map(s => s.trim());
+        const taskId = parseInt(parts[0], 10);
+        if (isNaN(taskId) || parts.length < 2) {
+          await reply(`❌ Format salah. Gunakan:\n*${prefix}tugas ubah <ID> | <deadline baru>*\n\nContoh:\n*${prefix}tugas ubah 1 | Minggu jam 23:59*`);
+          return;
+        }
+        await react('⏳');
+        const res = await updateTask(taskId, { deadline_text: parts[1] });
+        if (res.success) {
+          await react('✅');
+          await reply(`✅ *TUGAS BERHASIL DIPERBARUI!*\n▫️ *ID:* ${taskId}\n⏰ *Batas Baru:* ${parts[1]}`);
+        } else {
+          await reply(`❌ ${res.message || 'Gagal memperbarui tugas.'}`);
+        }
+        return;
+      }
+
+      // 5. Tampilkan daftar tugas (!tugas atau !tugas a atau !tugas b)
       let targetClass = 'A';
       if (['a', 'b', 'i'].includes(subCommand)) {
         targetClass = subCommand.toUpperCase();
@@ -1754,6 +1797,68 @@ _[tempel/paste teks jadwal kamu di sini]_
       await react('📝');
       const taskListText = await formatTaskList(targetClass);
       await reply(taskListText);
+      break;
+    }
+
+    case 'reminder':
+    case 'reminders':
+    case 'ingatkan':
+    case 'pengingat': {
+      const subCommand = (args[1] || '').toLowerCase();
+
+      // !ingatkan hapus <id> atau !delreminder <id>
+      if (subCommand === 'hapus' || subCommand === 'del' || subCommand === 'delete') {
+        const remId = parseInt(args[2], 10);
+        if (isNaN(remId)) {
+          await reply(`❌ Masukkan ID pengingat. Contoh: *${prefix}delreminder 1*`);
+          return;
+        }
+        const isDel = deleteCustomReminder(remId);
+        if (isDel) {
+          await reply(`🗑️ Pengingat ID *${remId}* berhasil dihapus.`);
+        } else {
+          await reply(`❌ Pengingat ID *${remId}* tidak ditemukan.`);
+        }
+        return;
+      }
+
+      // Jika ada waktu dan teks dipisahkan |: !ingatkan 19:30 | Kuis DFA besok
+      if (query.includes('|')) {
+        const parts = query.split('|').map(s => s.trim());
+        const timePart = parts[0];
+        const textPart = parts[1];
+        const dayPart = parts[2] || '';
+
+        const newRem = addCustomReminder({
+          text: textPart || 'Pengingat Deadline',
+          timeStr: timePart,
+          dayStr: dayPart,
+          targetJid: remoteJid,
+          creatorJid: sender
+        });
+        const dayLabel = newRem.day ? ` (Hari: *${newRem.day}*)` : '';
+        await reply(`⏰ *PENGINGAT DEADLINE BERHASIL DIBUAT!*\n\n▫️ *ID:* ${newRem.id}\n📌 *Agenda:* ${newRem.text}\n⏰ *Waktu:* ${newRem.time} WIB${dayLabel}\n\n💡 _Bot akan otomatis mengirimkan pengingat tepat waktu ke chat ini._\n_Hapus pengingat: *${prefix}delreminder ${newRem.id}*_`);
+        return;
+      }
+
+      // Tampilkan daftar pengingat
+      const listText = formatRemindersList();
+      await reply(`${listText}\n\n💡 *Cara Pasang Pengingat Baru:*\n*${prefix}ingatkan <jam> | <agenda> | [hari opsional]*\nContoh: *${prefix}ingatkan 19:30 | Kuis DFA besok*\n_Atau cukup tanya AI:_ *${prefix}ai ingatkan besok jam 8 kuis DFA*`);
+      break;
+    }
+
+    case 'delreminder': {
+      const remId = parseInt(args[1], 10);
+      if (isNaN(remId)) {
+        await reply(`❌ Masukkan ID pengingat. Contoh: *${prefix}delreminder 1*`);
+        return;
+      }
+      const isDel = deleteCustomReminder(remId);
+      if (isDel) {
+        await reply(`🗑️ Pengingat ID *${remId}* berhasil dihapus.`);
+      } else {
+        await reply(`❌ Pengingat ID *${remId}* tidak ditemukan.`);
+      }
       break;
     }
 
