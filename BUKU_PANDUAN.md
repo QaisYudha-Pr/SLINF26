@@ -54,60 +54,63 @@ Agar bot bisa mengirim pesan, Anda perlu menautkan akun WhatsApp Anda ke bot.
 
 ---
 
-## BAB 3: Menghubungkan Saluran (Channel) atau Grup
+## BAB 3: Menghubungkan Saluran (Channel) atau Grup Target
 
-Sebelum bot bisa mengirim pesan harian, Anda harus memberi tahu bot ke mana pesan harus dikirim.
+Sebelum bot bisa mengirim siaran atau polling, Anda harus mendaftarkan targetnya. Sekarang sistem pendaftaran sudah **serba otomatis, praktis, dan mengenali nama asli grup/saluran**:
 
-### A. Untuk Saluran WhatsApp (WhatsApp Channel):
-
-Ada **2 cara mudah** menghubungkan saluran Anda:
-
-#### Cara 1: Menggunakan Tautan / Link Saluran (Paling Praktis & Pasti Nyaut ⭐)
-1. Buka Saluran WhatsApp Anda di HP.
-2. Tekan nama saluran di bagian atas > pilih **Salin Tautan** (*Copy Link*).
-3. Kirim perintah ini di chat WhatsApp bot:
+### A. Cara Paling Praktis (Ketik Langsung di Grup / Saluran) ⭐
+1. Masukkan bot ke dalam Grup atau jadikan bot Admin di Saluran Anda.
+2. Di dalam ruang obrolan grup/saluran tersebut, cukup ketik:
    ```text
-   !addlink https://whatsapp.com/channel/0029Vbxxxxxxxxxxxx
+   !addtarget
    ```
-   *(Atau cukup kirimkan saja link saluran Anda ke chat bot, bot akan mendeteksi otomatis)*.
-4. Bot akan otomatis memeriksa saluran tersebut dan membalas:
-   ```text
-   ✅ Berhasil mendaftarkan saluran baru!
-   • Nama Saluran: Info Saluran Kita
-   • JID Saluran: 12036302987654321@newsletter
-   ```
-
-#### Cara 2: Meneruskan (Forward) Pesan dari Saluran
-1. Buka Saluran WhatsApp Anda di HP.
-2. Cari salah satu pesan/postingan di saluran tersebut, lalu **Teruskan (Forward)** ke chat bot.
-3. Bot akan otomatis mendeteksi ID Saluran Anda (`12036302987654321@newsletter`).
-4. Balas chat tersebut dengan perintah:
-   ```text
-   !addtarget 12036302987654321@newsletter
-   ```
+3. Bot akan otomatis membaca nama asli obrolan dan langsung mendaftarkannya sebagai target siaran resmi!
 
 ---
 
-### B. Untuk Grup WhatsApp:
-1. Masukkan nomor bot ke dalam grup WhatsApp Anda.
-2. Di dalam grup, ketik perintah:
-   ```text
-   !id
-   ```
-3. Bot akan membalas dengan ID grup (contoh: `12036304123456789@g.us`).
-4. Daftarkan grup tersebut dengan mengetik:
-   ```text
-   !addtarget 12036304123456789@g.us
-   ```
+### B. Menggunakan Tautan / Link Undangan:
+
+#### 1. Untuk Grup WhatsApp (Auto-Join & Auto-Daftar) 👥
+Anda tidak perlu repot memasukkan nomor bot manual ke kontak. Cukup kirim perintah ini di chat pribadi bot:
+```text
+!addtarget https://chat.whatsapp.com/AbCdEf123456789
+```
+*Bot akan memeriksa tautan, otomatis bergabung (join) ke dalam grup, dan mendaftarkannya ke database target!*
+
+#### 2. Untuk Saluran WhatsApp (Channel) 📢
+Salin tautan saluran Anda, lalu kirimkan ke bot:
+```text
+!addtarget https://whatsapp.com/channel/0029Vbxxxxxxxxxxxx
+```
+*Bot akan memverifikasi nama saluran dan mendaftarkannya.*
 
 ---
 
-### C. Mengecek Target yang Sudah Terdaftar:
-Ketik perintah ini di chat WhatsApp:
+### C. Mengecek Target yang Sudah Terdaftar (`!targets`)
+Ketik perintah ini di WhatsApp:
 ```text
 !targets
 ```
-Bot akan menampilkan daftar semua Saluran dan Grup yang sudah Anda daftarkan.
+Bot akan menampilkan daftar target lengkap dengan **nama aslinya dan tipe target**:
+```text
+╭───「 📋 DAFTAR TARGET SIARAN AKTIF (2) 」
+╰──────────────────────────
+
+*1.* 👥 Grup *SLINF 26 KELAS B*
+   └ 120363401569038234@g.us
+
+*2.* 📢 Saluran *Papan Informasi Mahasiswa*
+   └ 120363414885615982@newsletter
+```
+
+---
+
+### D. Menghapus Target Siaran (`!deltarget`)
+Gak perlu lagi menyalin ID angka panjang. Cukup sebutkan nomor urutnya dari daftar `!targets`:
+```text
+!deltarget 1
+```
+*(Perintah di atas akan menghapus target nomor 1).* Anda juga tetap bisa menghapus dengan JID jika diinginkan: `!deltarget 120363...@newsletter`.
 
 ---
 
@@ -193,39 +196,36 @@ Ketik perintah-perintah ini di chat WhatsApp dengan awalan tanda seru `!`:
 
 | Perintah | Contoh | Fungsi |
 | :--- | :--- | :--- |
-| `!menu` | `!menu` | Menampilkan menu bantuan dan semua perintah |
-| `!today` | `!today` | Melihat pratinjau (preview) template hari ini |
-| `!preview <hari>` | `!preview selasa` | Melihat pratinjau template hari tertentu |
-| `!send` | `!send` | Langsung kirim template hari ini ke semua target |
-| `!send <hari>` | `!send senin` | Langsung kirim template hari tertentu ke semua target |
-| `!sendto <JID> [hari]` | `!sendto 12036302xx@newsletter` | Kirim template ke satu target spesifik |
-| `!id` | `!id` | Cek ID chat / grup tempat Anda mengetik |
-| `!targets` | `!targets` | Melihat semua saluran & grup tujuan yang terdaftar |
-| `!addtarget <JID>` | `!addtarget 12036302xx@newsletter` | Mendaftarkan saluran / grup baru |
-| `!deltarget <JID>` | `!deltarget 12036302xx@newsletter` | Menghapus saluran / grup dari target |
-| `!list` | `!list` | Melihat daftar hari/template yang tersedia |
-| `!additem <hari> <teks>` | `!additem senin ▫️ Pengumuman baru` | Menambah baris list ke template hari itu |
-| `!delitem <hari> <nomor>` | `!delitem senin 1` | Menghapus baris item dari template hari itu |
-| `!all` | `!all` | Membuat polling semua dosen sekaligus (Frau Woro, Frau Wisma, Frau Lita, Herr Agus) |
-| `!all <dosen 1, 2...>` | `!all Frau Woro, Frau Wisma` | Membuat polling daftar dosen yang ditentukan |
-| `!dosen <Nama>` | `!dosen Frau Woro` | Membuat polling kehadiran 1 dosen (Hadir / Tidak / Belum Diketahui) |
-| `!dosen all <Nama>` | `!dosen all Frau Woro` | Mengirim polling 1 dosen ke semua target saluran/grup |
-| `!listdosen` | `!listdosen` | Melihat daftar dosen default yang tersimpan |
-| `!setdosen <dosen 1, 2...>` | `!setdosen Frau Woro, Herr Agus` | Mengubah daftar dosen default polling |
-| `!ai <pertanyaan>` | `!ai tambahkan jadwal kelas A hari senin...` | Tanya AI Gemini & **Auto-Save Jadwal Otomatis** |
-| `@Bot <pertanyaan>` | `@Bot apa jadwal kelas A besok?` | Tag/mention bot di grup untuk berinteraksi dengan AI |
+| `!menu` | `!menu` | Menampilkan menu bantuan dan daftar panduan |
+| `!today` / `!hariini` | `!today` | Melihat jadwal kuliah dan agenda hari ini |
 | `!jadwal <kelas> [hari]` | `!jadwal a senin` | Melihat jadwal kuliah Kelas A, B, atau I |
-| `!scanjadwal` | `!scanjadwal` *(caption/reply foto)* | Pindai tabel foto jadwal kuliah otomatis dengan AI Gemini |
-| `!poll <Tanya> \| <Opsi1> \| ...` | `!poll Rapat? \| Masuk \| Cancel` | Membuat polling interaktif WhatsApp kustom bebas |
-| `!PRAWIRA` | `!PRAWIRA` | **KODE RAHASIA:** Mengaktifkan akses Pemilik (Owner) untuk nomor Anda |
-| `!tambahkan <No>` | `!tambahkan 08123456789` | Mendaftarkan nomor admin/owner baru yang diizinkan |
-| `!hapusnomor <No>` | `!hapusnomor 08123456789` | Menghapus nomor dari daftar admin/owner |
-| `!listowner` | `!listowner` | Melihat semua nomor yang memiliki akses owner |
+| `!scanjadwal` | `!scanjadwal` *(caption/reply foto)* | Pindai foto jadwal kuliah otomatis dengan AI Vision |
+| `!tugas` | `!tugas` atau `!tugas b` | Menampilkan daftar tugas aktif di Cloud Supabase & Lokal |
+| `!tugas tambah ...` | `!tugas tambah B \| Alpro \| Latihan \| Jumat` | Menambahkan tugas kuliah baru secara manual |
+| `!tugas done <ID/Matkul>` | `!tugas done 8` atau `!tugas done Phonetik` | Menandai tugas telah selesai tanpa harus ingat ID |
+| `!tugas hapus <ID>` | `!tugas hapus 3` | Menghapus tugas dari database |
+| `!ingatkan ...` | `!ingatkan 2026-10-14 20:00 \| Kuis \| ke gw` | Pasang alarm pengingat (Target: `ke gw`, `grup`, `saluran`) |
+| `!listpengingat` | `!listpengingat` | Melihat daftar pengingat yang sedang aktif terjadwal |
+| `!hapuspengingat <ID>` | `!hapuspengingat 1` | Membatalkan pengingat terjadwal |
+| `!ai <pertanyaan>` | `/ai catat tugas...` atau `!ai jelasin materi...` | Tanya AI Alters (Model Gemini 3.5 Flash-Lite gratis) |
+| `@Bot <pertanyaan>` | `@Bot apa jadwal kelas B besok?` | Panggil bot di grup langsung tanpa prefiks |
+| `!all` / `!pollall` | `!all` | Polling kehadiran seluruh dosen hari ini (Grup & Saluran) |
+| `!dosen <Nama>` | `!dosen Frau Woro` | Polling kehadiran 1 dosen spesifik |
+| `!poll <Tanya> \| <Opsi1>...` | `!poll Rapat? \| Masuk \| Cancel` | Membuat polling kustom pilihan ganda / tunggal |
+| `!targets` | `!targets` | Melihat semua saluran & grup terdaftar dengan NAMA ASLI |
+| `!addtarget` | `!addtarget` *(di dalam grup/saluran)* | Daftarkan grup/saluran ini langsung tanpa perlu link |
+| `!addtarget <link/JID>` | `!addtarget https://chat.whatsapp.com/...` | Daftarkan grup (auto-join) atau saluran via tautan |
+| `!deltarget <nomor/JID>` | `!deltarget 1` | Menghapus target siaran berdasarkan nomor urut / JID |
+| `!send` | `!send` | Kirim template harian ke seluruh target terdaftar |
+| `!send <1/2/nomor>` | `!send 1` | Kirim template hanya ke nomor indeks target tertentu |
+| `!send saluran` / `grup` | `!send saluran` | Kirim template hanya ke semua Saluran atau semua Grup |
+| `!bc <target> <pesan>` | `!bc saluran Kuliah jam 10 kosong` | Siarkan pesan bebas kustom ke target tertentu |
 | `!autosend on [jam:menit]` | `!autosend on 07:00` | Mengaktifkan kirim otomatis setiap hari |
 | `!autosend off` | `!autosend off` | Mematikan kirim otomatis |
-| `!repair` | `!repair` | **Self-Repair:** Cek kesehatan memori, file sistem & auto-heal |
-| `!restart` | `!restart` | Me-restart proses bot secara halus |
-| `!status` | `!status` | Melihat status koneksi, jadwal, dan target bot |
+| `!test` / `!status` | `!test` | **Self-Testing:** Uji otomatis seluruh subsistem & solusi |
+| `!checkupdate` | `!checkupdate` | Cek commit pembaruan baru dari GitHub |
+| `!update` | `!update` | Unduh pembaruan dari GitHub & restart otomatis |
+| `!restart` | `!restart` | Me-restart proses bot secara bersih |
 
 ---
 
