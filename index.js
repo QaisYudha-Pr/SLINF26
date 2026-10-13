@@ -943,7 +943,7 @@ async function handleIncomingMessage(msg) {
       'send', 'kirim', 'bc', 'broadcast',
       'jadwal', 'jadwala', 'jadwalb', 'jadwali',
       'today', 'hariini', 'tugas', 'task',
-      'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs',
+      'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'importmhs', 'batchmhs',
       'pilihan', 'tombol', 'menuinteraktif',
       'listdosen', 'menu', 'help', 'ai', 'tanya',
       'id', 'scanjadwal', 'scan', 'reset', 'ingat',
@@ -1053,7 +1053,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'pilihan', 'tombol', 'menuinteraktif', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'importmhs', 'batchmhs', 'pilihan', 'tombol', 'menuinteraktif', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -1118,6 +1118,7 @@ async function handleIncomingMessage(msg) {
     'send', 'sendto', 'kirim', 'autosend', 'restart', 'update',
     'setdosen', 'additem', 'delitem',
     'tambahkan', 'addowner', 'hapusnomor', 'delowner', 'listowner',
+    'importmhs', 'batchmhs',
     'repair'
   ];
 
@@ -2424,6 +2425,39 @@ ${messageBody}
         await reply(`✅ *[Mahasiswa Berhasil Ditambahkan]*\n\n• Nama: *${mName}*\n• NIM: \`${mNim}\`\n• Database: 🟢 Supabase Cloud PostgreSQL\n\nKetik *${prefix}mahasiswa* untuk melihat daftar.`);
       } else {
         await reply(`⚠️ Gagal menambahkan: ${addRes.message}`);
+      }
+      break;
+    }
+
+    case 'importmhs':
+    case 'batchmhs': {
+      let rawText = query.trim();
+
+      // Cek apakah ada file dokumen/lampiran yang dikirim (misal file .txt atau .csv)
+      const mediaFile = await extractMediaFromMessage(msg, sock);
+      if (mediaFile && mediaFile.buffer) {
+        try {
+          rawText = mediaFile.buffer.toString('utf-8');
+        } catch (e) {}
+      }
+
+      if (!rawText) {
+        await reply(`❌ Masukkan daftar nama dan NIM, atau kirim file teks/CSV dengan caption *${prefix}importmhs*.\n\nContoh format yang didukung:\n• *1. Budi Santoso - 22051204001*\n• *Siti Aminah (22051204002)*\n• *Ahmad Zaki 22051204003* (Copy-paste dari Excel)\n\nBot bisa mengimpor 100+ data sekaligus dalam 1 detik! ⚡`);
+        return;
+      }
+
+      const parsed = mahasiswaManager.parseMahasiswaList(rawText);
+      if (parsed.length === 0) {
+        await reply(`⚠️ Tidak ditemukan data nama dan NIM yang valid dari teks yang Anda kirim.\nPastikan setiap baris memiliki nama dan NIM minimal 5 angka.`);
+        return;
+      }
+
+      await reply(`⏳ Sedang mengimpor *${parsed.length} data mahasiswa* ke database Supabase Cloud...`);
+      const bRes = await mahasiswaManager.batchAddMahasiswa(parsed);
+      if (bRes.success) {
+        await reply(`✅ *[IMPORT MASSAL MAHASISWA BERHASIL]*\n\n• Total Terdeteksi: *${bRes.total}* orang\n• Berhasil Disimpan: *${bRes.inserted}* mahasiswa baru\n• Dilewati (NIM Sudah Ada): *${bRes.skipped}* mahasiswa\n• Database: 🟢 Supabase PostgreSQL Cloud\n\nKetik *${prefix}mahasiswa* untuk melihat seluruh data! 🎓`);
+      } else {
+        await reply(`❌ Gagal impor massal: ${bRes.message}`);
       }
       break;
     }

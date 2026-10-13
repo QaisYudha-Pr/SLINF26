@@ -350,6 +350,8 @@ Parameter:
   [[ACTION:GET_MAHASISWA:{"query":""}]] (isi "query" jika pengguna mencari nama atau NIM spesifik)
 - Tambah Mahasiswa Baru (contoh: "tambahkan mahasiswa Budi Santoso NIM 22051204001", "catat mhs baru Siti Aminah 22051204002"):
   [[ACTION:ADD_MAHASISWA:{"nama":"Budi Santoso","nim":"22051204001"}]]
+- Tambah Banyak Mahasiswa Sekaligus (Batch / Bulk Import 2 - 100+ data dari daftar):
+  [[ACTION:BATCH_MAHASISWA:{"mahasiswa":[{"nama":"Budi Santoso","nim":"22051204001"},{"nama":"Siti Aminah","nim":"22051204002"}]}]]
 - Hapus Mahasiswa (contoh: "hapus mahasiswa 22051204001", "hapus mhs budi"):
   [[ACTION:DEL_MAHASISWA:{"target":"22051204001"}]]
 
@@ -513,8 +515,15 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
           actionMatches = [[`[[ACTION:ADD_TARGET:{"target":"${tgt}"}]]`, 'ADD_TARGET', JSON.stringify({ target: tgt })]];
         }
 
-        // Safeguard pemicu cek mahasiswa otomatis jika AI hanya membalas teks
-        if (actionMatches.length === 0 && (qLowerPre.includes('mahasiswa') || qLowerPre.includes('mhs')) && (qLowerPre.includes('cek') || qLowerPre.includes('lihat') || qLowerPre.includes('daftar') || qLowerPre.includes('data') || qLowerPre.includes('siapa'))) {
+        // 🚀 Auto-Detect Impor Massal Mahasiswa (10 - 100+ data):
+        // Jika pengguna mengirim teks berisi 2 atau lebih baris nama & NIM dengan kata kunci penambahan,
+        // langsung picu BATCH_MAHASISWA secara otomatis tanpa tergantung limit token keluaran AI!
+        const parsedBulkMhs = mahasiswaManager.parseMahasiswaList(userQuestion || '');
+        const hasBulkMhsIntent = (qLowerPre.includes('tambah') || qLowerPre.includes('masuk') || qLowerPre.includes('impor') || qLowerPre.includes('import') || qLowerPre.includes('catat') || qLowerPre.includes('simpan') || qLowerPre.includes('daftar') || qLowerPre.includes('data'));
+        if (parsedBulkMhs.length >= 2 && hasBulkMhsIntent) {
+          actionMatches = [[`[[ACTION:BATCH_MAHASISWA:{}]]`, 'BATCH_MAHASISWA', JSON.stringify({ mahasiswa: parsedBulkMhs })]];
+        } else if (actionMatches.length === 0 && (qLowerPre.includes('mahasiswa') || qLowerPre.includes('mhs')) && (qLowerPre.includes('cek') || qLowerPre.includes('lihat') || qLowerPre.includes('siapa') || qLowerPre.includes('data'))) {
+          // Safeguard pemicu cek mahasiswa otomatis jika AI hanya membalas teks
           actionMatches = [[`[[ACTION:GET_MAHASISWA:{}]]`, 'GET_MAHASISWA', '{}']];
         }
 
@@ -546,8 +555,8 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
             }
 
             // 🛡️ Safeguard cerdas untuk mahasiswa intent
-            const isMhsCheckIntent = (qLower.includes('mahasiswa') || qLower.includes('mhs')) && (qLower.includes('cek') || qLower.includes('lihat') || qLower.includes('daftar') || qLower.includes('data') || qLower.includes('siapa') || qLower.includes('cari'));
-            if (isMhsCheckIntent && actionType !== 'GET_MAHASISWA' && actionType !== 'ADD_MAHASISWA' && actionType !== 'DEL_MAHASISWA') {
+            const isMhsCheckIntent = (qLower.includes('mahasiswa') || qLower.includes('mhs')) && (qLower.includes('cek') || qLower.includes('lihat') || qLower.includes('siapa') || qLower.includes('cari'));
+            if (isMhsCheckIntent && actionType !== 'GET_MAHASISWA' && actionType !== 'ADD_MAHASISWA' && actionType !== 'DEL_MAHASISWA' && actionType !== 'BATCH_MAHASISWA') {
               actionType = 'GET_MAHASISWA';
             }
 
@@ -565,7 +574,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
               }
             }
 
-            const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST', 'ADD_TARGET', 'DEL_TARGET', 'ADD_MAHASISWA', 'DEL_MAHASISWA'];
+            const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST', 'ADD_TARGET', 'DEL_TARGET', 'ADD_MAHASISWA', 'DEL_MAHASISWA', 'BATCH_MAHASISWA'];
             if (ownerOnlyActions.includes(actionType) && !isSenderOwner) {
               feedbacks.push(`⚠️ _Catatan: Aksi ${actionType} memerlukan izin khusus Admin / Owner bot._`);
               continue;
@@ -998,13 +1007,19 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 } else {
                   feedbacks.push(`⚠️ Gagal mendaftarkan mahasiswa: ${resMhs.message}`);
                 }
-              } else if (actionType === 'DEL_MAHASISWA') {
-                const target = actionData.target || actionData.nim || actionData.id;
-                const resDelM = await mahasiswaManager.deleteMahasiswa(target);
-                if (resDelM.success) {
-                  feedbacks.push(`🗑️ *[Mahasiswa Dihapus]* Data mahasiswa (\`${target}\`) telah dihapus dari database Supabase.`);
+              } else if (actionType === 'BATCH_MAHASISWA') {
+                const listToInsert = (Array.isArray(actionData.mahasiswa) && actionData.mahasiswa.length > 0)
+                  ? actionData.mahasiswa
+                  : mahasiswaManager.parseMahasiswaList(userQuestion || '');
+                if (listToInsert.length === 0) {
+                  feedbacks.push(`⚠️ Tidak ditemukan data nama dan NIM yang valid untuk diimpor.`);
                 } else {
-                  feedbacks.push(`⚠️ Gagal menghapus mahasiswa: ${resDelM.message}`);
+                  const bRes = await mahasiswaManager.batchAddMahasiswa(listToInsert);
+                  if (bRes.success) {
+                    feedbacks.push(`🎓 *[Import Massal Mahasiswa Berhasil]*\n• Total Diproses: *${bRes.total}* mahasiswa\n• Berhasil Masuk: *${bRes.inserted}* mahasiswa baru\n• Dilewati (NIM Sudah Ada): *${bRes.skipped}* mahasiswa\n\nTersimpan permanen di Cloud Database Supabase! 🚀`);
+                  } else {
+                    feedbacks.push(`⚠️ Gagal impor massal mahasiswa: ${bRes.message}`);
+                  }
                 }
               }
             } catch (eAction) {

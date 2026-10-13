@@ -85,9 +85,110 @@ async function deleteMahasiswa(idOrNim) {
   }
 }
 
+/**
+ * Mengekstrak daftar nama dan NIM mahasiswa dari teks mentah (copy-paste Excel, CSV, list berurut)
+ * @param {string} text - Teks mentah berisi daftar mahasiswa
+ * @returns {Array<{nama: string, nim: string}>}
+ */
+function parseMahasiswaList(text) {
+  if (!text || typeof text !== 'string') return [];
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const results = [];
+  const seenNims = new Set();
+
+  for (const line of lines) {
+    // Cari NIM (deretan 5 sampai 20 digit angka)
+    const nimMatch = line.match(/\b(\d{5,20})\b/);
+    if (!nimMatch) continue;
+    const nim = nimMatch[1];
+    if (seenNims.has(nim)) continue;
+
+    // Nama adalah sisa teks setelah menghapus NIM dan tanda baca/nomor urut
+    let name = line
+      .replace(nim, '')
+      .replace(/^[\d]+[\.\)\-\s]+/, '') // Hapus nomor urut di awal: 1. atau 1) atau 1-
+      .replace(/[\(\)\[\]\|\,\:\t\-]+/g, ' ') // Ganti tanda pemisah dengan spasi
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (name.length >= 2) {
+      seenNims.add(nim);
+      results.push({ nama: name, nim: nim });
+    }
+  }
+  return results;
+}
+
+/**
+ * Menambahkan banyak data mahasiswa sekaligus (Batch Insert / Bulk Import) ke Supabase Cloud
+ * Otomatis menangani 100+ data sekaligus dan mengabaikan duplikasi NIM secara aman.
+ * @param {Array<{nama: string, nim: string}>} mahasiswaArray
+ */
+async function batchAddMahasiswa(mahasiswaArray) {
+  if (!Array.isArray(mahasiswaArray) || mahasiswaArray.length === 0) {
+    return { success: false, message: 'Daftar mahasiswa kosong.', inserted: 0, total: 0 };
+  }
+
+  // Bersihkan data
+  const validItems = [];
+  const seenNims = new Set();
+  for (const item of mahasiswaArray) {
+    if (!item.nama || !item.nim) continue;
+    const cleanNim = String(item.nim).trim();
+    const cleanName = String(item.nama).trim();
+    if (cleanNim.length >= 5 && cleanName.length >= 2 && !seenNims.has(cleanNim)) {
+      seenNims.add(cleanNim);
+      validItems.push({ nama: cleanName, nim: cleanNim });
+    }
+  }
+
+  if (validItems.length === 0) {
+    return { success: false, message: 'Tidak ada data nama dan NIM valid yang ditemukan.', inserted: 0, total: 0 };
+  }
+
+  // Pecah dalam batch 100 agar aman dari limit payload Cloudflare / Supabase
+  const chunkSize = 100;
+  let totalInserted = 0;
+  const allInsertedData = [];
+
+  try {
+    for (let i = 0; i < validItems.length; i += chunkSize) {
+      const chunk = validItems.slice(i, i + chunkSize);
+      const res = await fetchSupabase('mahasiswa?on_conflict=nim', {
+        method: 'POST',
+        headers: {
+          'Prefer': 'resolution=ignore-duplicates,return=representation'
+        },
+        body: JSON.stringify(chunk)
+      });
+
+      if (res && (res.status === 201 || res.status === 200)) {
+        const rows = await res.json().catch(() => []);
+        totalInserted += rows.length;
+        allInsertedData.push(...rows);
+      } else {
+        const errText = await res.text();
+        console.warn('⚠️ [Supabase Batch Insert Warning]:', errText);
+      }
+    }
+
+    return {
+      success: true,
+      total: validItems.length,
+      inserted: totalInserted,
+      skipped: validItems.length - totalInserted,
+      data: allInsertedData
+    };
+  } catch (err) {
+    return { success: false, message: err.message, inserted: totalInserted, total: validItems.length };
+  }
+}
+
 module.exports = {
   getMahasiswaList,
   searchMahasiswa,
   addMahasiswa,
-  deleteMahasiswa
+  deleteMahasiswa,
+  parseMahasiswaList,
+  batchAddMahasiswa
 };
