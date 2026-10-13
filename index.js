@@ -152,6 +152,42 @@ module.exports = { sendNativePoll };
 `;
       fs.writeFileSync(pollUtilsFile, pollCode, 'utf-8');
     }
+
+    const memMgrFile = path.join(utilsDir, 'memoryManager.js');
+    if (!fs.existsSync(memMgrFile)) {
+      console.log('🩺 [Self-Heal] Memulihkan file utils/memoryManager.js yang hilang...');
+      const memCode = `const fs = require('fs');
+const path = require('path');
+const sessionMap = new Map();
+const factsMap = new Map();
+function getSession(id) {
+  let s = sessionMap.get(id);
+  if (!s) { s = { lastActive: Date.now(), turns: [] }; sessionMap.set(id, s); }
+  return s;
+}
+function addSessionTurn(id, role, text) {
+  const s = getSession(id);
+  s.turns.push({ role, text });
+  if (s.turns.length > 16) s.turns = s.turns.slice(-16);
+}
+function resetSession(id) { sessionMap.delete(id); return true; }
+function getLongTermFacts(id) { return factsMap.get(id) || {}; }
+function saveFact(id, k, v) { const c = getLongTermFacts(id); c[k] = v; factsMap.set(id, c); return true; }
+function removeFact(id, k) { if (k) { const c = getLongTermFacts(id); delete c[k]; } else { factsMap.delete(id); } return true; }
+function getFormattedMemoryPrompt(id) {
+  const f = getLongTermFacts(id);
+  const k = Object.keys(f);
+  return k.length ? k.map(x => \`• \${x}: \${f[x]}\`).join('\\n') : 'Belum ada catatan memori khusus.';
+}
+function formatMemoryForUser(id) {
+  const f = getLongTermFacts(id);
+  const k = Object.keys(f);
+  return k.length ? \`🧠 *[Memori AI]*\\n\` + k.map(x => \`▫️ *\${x}*: \${f[x]}\`).join('\\n') : '🧠 *[Memori AI]* Belum ada catatan khusus.';
+}
+module.exports = { getSession, addSessionTurn, resetSession, getLongTermFacts, saveFact, removeFact, getFormattedMemoryPrompt, formatMemoryForUser };
+`;
+      fs.writeFileSync(memMgrFile, memCode, 'utf-8');
+    }
   } catch (err) {
     console.error('⚠️ [Self-Heal Error]:', err.message);
   }
