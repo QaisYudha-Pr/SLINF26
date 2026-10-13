@@ -687,9 +687,74 @@ async function handleIncomingMessage(msg) {
   const isBotMentioned = (botJid && mentionedJids.includes(botJid)) || (botNumber && trimmedText.includes(`@${botNumber}`));
 
   if (isBotMentioned) {
-    const question = trimmedText.replace(new RegExp(`@${botNumber}`, 'g'), '').trim();
+    // Bersihkan mention (@botNumber) dari teks agar bisa diparse sebagai perintah
+    const textAfterMention = trimmedText
+      .replace(new RegExp(`@${botNumber}`, 'g'), '')
+      .replace(/^[!\/.]\s*/, '')  // hapus prefix jika ada
+      .trim();
+
+    // Perintah yang bisa dipicu via @mention di grup
+    const mentionTriggerCommands = [
+      'all', 'pollall', 'poll', 'polling', 'dosen', 'polldosen',
+      'jadwal', 'jadwala', 'jadwalb', 'jadwali',
+      'today', 'hariini', 'tugas', 'task',
+      'listdosen', 'menu', 'help', 'ai', 'tanya',
+      'status', 'id', 'scanjadwal', 'scan', 'reset', 'ingat'
+    ];
+
+    const firstWord = (textAfterMention.split(/\s+/)[0] || '').toLowerCase();
+    const isMentionCommand = mentionTriggerCommands.includes(firstWord);
+
+    if (isMentionCommand && textAfterMention) {
+      // ✅ Perintah via @mention: jalankan langsung di grup ini
+      console.log(`📌 [Mention Command] "${textAfterMention}" dari ${sender} di ${remoteJid}`);
+      await react('⚡');
+
+      // Rekonstruksi pesan palsu agar bisa diproses ulang lewat handler yang sama
+      // dengan teks = perintah (tanpa @mention)
+      const fakeMsgForCommand = {
+        ...msg,
+        message: {
+          ...msg.message,
+          conversation: textAfterMention,
+          extendedTextMessage: undefined
+        }
+      };
+
+      // Panggil handler rekursif dengan teks perintah bersih
+      // Kita override trimmedText secara langsung dengan memproses command inline
+      // Gunakan cleanCommandText yang sudah di-strip mention
+      const _args = textAfterMention.split(/\s+/);
+      let _cmd = (_args[0] || '').toLowerCase();
+      const _query = textAfterMention.slice(_cmd.length).trim();
+
+      // Alias normalize
+      if (_cmd === 'pollall') _cmd = 'all';
+      if (_cmd === 'polldosen') _cmd = 'dosen';
+      if (_cmd === 'jadwala') { _cmd = 'jadwal'; _args[1] = 'a'; }
+      if (_cmd === 'jadwalb') { _cmd = 'jadwal'; _args[1] = 'b'; }
+      if (_cmd === 'jadwali') { _cmd = 'jadwal'; _args[1] = 'i'; }
+      if (_cmd === 'hariini') _cmd = 'today';
+      if (_cmd === 'tanya') _cmd = 'ai';
+
+      console.log(`📌 [Mention→Command] Menjalankan perintah: /${_cmd} ${_query}`);
+
+      // Inject ke alur switch-case dengan cara memanipulasi msg dan memanggil ulang handler
+      // Cara paling bersih: inject teks ke msg.message.conversation lalu panggil handleIncomingMessage
+      const injectedMsg = JSON.parse(JSON.stringify(msg));
+      if (injectedMsg.message) {
+        // Set teks perintah ke conversation field
+        injectedMsg.message.conversation = textAfterMention;
+        // Hapus extendedTextMessage agar tidak confuse parser
+        delete injectedMsg.message.extendedTextMessage;
+      }
+      await handleIncomingMessage(injectedMsg);
+      return;
+    }
+
+    // Bukan perintah → serahkan ke AI seperti biasa
     const mediaFile = await extractMediaFromMessage(msg, sock);
-    const promptToAsk = question || (mediaFile ? 'Tolong analisis dan simpulkan isi dokumen/foto ini secara lengkap dan terstruktur.' : 'Halo bot!');
+    const promptToAsk = textAfterMention || (mediaFile ? 'Tolong analisis dan simpulkan isi dokumen/foto ini secara lengkap dan terstruktur.' : 'Halo bot!');
     console.log(`🤖 [AI Mention] Ditanyakan oleh ${sender}: "${promptToAsk}"${mediaFile ? ` [Lampiran: ${mediaFile.mimeType}]` : ''}`);
     await react('🤔');
     try {
