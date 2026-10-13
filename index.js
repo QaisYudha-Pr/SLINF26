@@ -2104,35 +2104,59 @@ ${messageBody}
     case 'targets': {
       const targets = config.targetJids || [];
       if (targets.length === 0) {
-        await reply(`📋 Daftar target saluran / grup saat ini masih KOSONG.\nTambahkan dengan: *${prefix}addtarget <JID>* atau *${prefix}addlink <tautan_saluran>*`);
+        await reply(`📋 Daftar target saluran / grup saat ini masih KOSONG.\n\n💡 *Cara Menambahkan Target:* \n• Ketik *${prefix}addtarget* (di dalam grup/saluran)\n• Atau *${prefix}addtarget <link/JID>*\n  Contoh: *${prefix}addtarget https://chat.whatsapp.com/...*`);
         return;
       }
 
-      const listStr = targets
-        .map((t, idx) => {
-          const type = t.endsWith('@newsletter') ? '📢 Saluran' : (t.endsWith('@g.us') ? '👥 Grup' : '👤 Pribadi');
-          return `*${idx + 1}.* \`${t}\` (${type})`;
-        })
-        .join('\n');
+      await react('🔍');
+      const targetItems = [];
+      for (let idx = 0; idx < targets.length; idx++) {
+        const t = targets[idx];
+        let name = '';
+        let type = '👤 Pribadi';
+
+        if (t.endsWith('@g.us')) {
+          type = '👥 Grup';
+          try {
+            const meta = await sock.groupMetadata(t).catch(() => null);
+            if (meta && meta.subject) name = meta.subject;
+          } catch (e) {}
+        } else if (t.endsWith('@newsletter')) {
+          type = '📢 Saluran';
+          try {
+            const meta = await sock.newsletterMetadata('JID', t).catch(() => null);
+            if (meta && meta.name) name = meta.name;
+          } catch (e) {}
+        }
+
+        const nameLabel = name ? `*${name}*\n   └ ` : '';
+        targetItems.push(`*${idx + 1}.* ${type} ${nameLabel}\`${t}\``);
+      }
 
       const tipsStr = 
-`\n━━━━━━━━━━━━━━━━━━━━━
-💡 *CARA SIARAN KE TARGET PILIHAN:*
-• *${prefix}send 1* ➔ Kirim template ke target nomor 1 saja
-• *${prefix}send 1,2* ➔ Kirim ke target nomor 1 & 2
-• *${prefix}send saluran* ➔ Kirim hanya ke semua Saluran
-• *${prefix}send grup* ➔ Kirim hanya ke semua Grup
-• *${prefix}send sini* ➔ Kirim ke obrolan ini
-• *${prefix}send jadwal a [target]* ➔ Siarkan jadwal kuliah
-• *${prefix}bc [target] <pesan>* ➔ Siarkan pengumuman bebas kustom`;
+`━━━━━━━━━━━━━━━━━━━━━
+💡 *CARA SIARAN & KELOLA TARGET:*
+• *${prefix}send 1* ➔ Kirim ke target nomor 1 saja
+• *${prefix}send saluran* ➔ Kirim ke semua Saluran
+• *${prefix}send grup* ➔ Kirim ke semua Grup
+• *${prefix}addtarget* ➔ Daftarkan grup ini langsung
+• *${prefix}addtarget <link/JID>* ➔ Tambah target via link/JID
+• *${prefix}deltarget <nomor/JID>* ➔ Hapus target (cth: *${prefix}deltarget 1*)`;
 
-      await reply(`📋 *DAFTAR TARGET PENGIRIMAN (${targets.length}):*\n\n${listStr}\n${tipsStr}`);
+      await reply(`╭───「 📋 *DAFTAR TARGET SIARAN AKTIF (${targets.length})* 」\n╰──────────────────────────\n\n${targetItems.join('\n\n')}\n\n${tipsStr}`);
       break;
     }
 
     case 'addtarget':
     case 'addlink': {
-      const input = (args[1] || '').trim();
+      let input = (args[1] || '').trim();
+
+      // Jika perintah diketik tanpa argumen di dalam grup atau saluran, daftarkan obrolan saat ini secara otomatis!
+      if (!input || input === 'sini' || input === 'here') {
+        if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@newsletter')) {
+          input = remoteJid;
+        }
+      }
 
       // 1. Jika input berupa tautan Saluran (whatsapp.com/channel/...)
       const channelMatch = input.match(/whatsapp\.com\/channel\/([a-zA-Z0-9_-]+)/i);
@@ -2154,7 +2178,7 @@ ${messageBody}
 
           config.targetJids.push(meta.id);
           saveConfig(config);
-          await reply(`✅ Berhasil mendaftarkan saluran baru!\n\n• Nama Saluran: *${meta.name || 'Saluran'}*\n• JID Saluran: \`${meta.id}\`\n• Pengikut: *${meta.subscribers || 0}*\n\nTotal target sekarang: ${config.targetJids.length}`);
+          await reply(`✅ *Berhasil Mendaftarkan Saluran Baru!*\n\n• Nama Saluran: *${meta.name || 'Saluran'}*\n• JID Saluran: \`${meta.id}\`\n• Pengikut: *${meta.subscribers || 0}*\n\nTotal target siaran sekarang: ${config.targetJids.length}`);
         } catch (err) {
           await reply(`❌ Gagal mengambil data saluran: ${err.message}`);
         }
@@ -2175,11 +2199,9 @@ ${messageBody}
 
           let joinedStatus = 'ℹ️ Bot sudah berada di dalam grup ini';
           try {
-            // Coba join ke grup via Baileys groupAcceptInvite
             await sock.groupAcceptInvite(inviteCode);
             joinedStatus = '🟢 Bot berhasil bergabung ke dalam grup!';
           } catch (eJoin) {
-            // Jika bot sudah di dalam grup atau error non-fatal, lanjutkan
             if (eJoin.message && !eJoin.message.includes('already in')) {
               console.log(`ℹ️ [Group Join Notice]: ${eJoin.message}`);
             }
@@ -2190,7 +2212,7 @@ ${messageBody}
 
           if (!config.targetJids) config.targetJids = [];
           if (config.targetJids.includes(groupJid)) {
-            await reply(`⚠️ Grup *${groupInfo.subject || 'Grup'}* (\`${groupJid}\`) sudah terdaftar di daftar target siaran.\n\nStatus: ${joinedStatus}`);
+            await reply(`⚠️ Grup *${groupInfo.subject || 'Grup'}* (\`${groupJid}\`) sudah terdaftar sebelumnya di target siaran.\n\nStatus: ${joinedStatus}`);
             return;
           }
 
@@ -2205,37 +2227,64 @@ ${messageBody}
 
       // 3. Jika input berupa ID JID langsung (@newsletter, @g.us, @s.whatsapp.net)
       if (!input || (!input.includes('@newsletter') && !input.includes('@g.us') && !input.includes('@s.whatsapp.net'))) {
-        await reply(`❌ Format tidak valid. Anda bisa memasukkan Tautan Grup, Tautan Saluran, atau ID JID.\n\nContoh:\n• Tautan Grup: *${prefix}addlink https://chat.whatsapp.com/Abc123...*\n• Tautan Saluran: *${prefix}addlink https://whatsapp.com/channel/0029Va...*\n• ID Langsung: *${prefix}addtarget 1203630xxxxxxx@g.us*`);
+        await reply(`❌ Format tidak valid. Anda bisa mendaftarkan target dengan cara:\n\n1. Ketik *${prefix}addtarget* langsung di dalam grup/saluran ini.\n2. Tautan Grup: *${prefix}addtarget https://chat.whatsapp.com/...*\n3. Tautan Saluran: *${prefix}addtarget https://whatsapp.com/channel/...*\n4. ID JID Langsung: *${prefix}addtarget 1203630xxxxxxx@g.us*`);
         return;
       }
 
       if (!config.targetJids) config.targetJids = [];
       if (config.targetJids.includes(input)) {
-        await reply(`⚠️ Target \`${input}\` sudah ada di dalam daftar.`);
+        await reply(`⚠️ Target \`${input}\` sudah terdaftar di dalam daftar.`);
         return;
+      }
+
+      // Ambil nama grup/saluran dari JID jika memungkinkan
+      let targetName = '';
+      let targetType = input.endsWith('@newsletter') ? '📢 Saluran' : (input.endsWith('@g.us') ? '👥 Grup' : '👤 Pribadi');
+
+      if (input.endsWith('@g.us')) {
+        try {
+          const gMeta = await sock.groupMetadata(input).catch(() => null);
+          if (gMeta && gMeta.subject) targetName = gMeta.subject;
+        } catch (e) {}
+      } else if (input.endsWith('@newsletter')) {
+        try {
+          const nlMeta = await sock.newsletterMetadata('JID', input).catch(() => null);
+          if (nlMeta && nlMeta.name) targetName = nlMeta.name;
+        } catch (e) {}
       }
 
       config.targetJids.push(input);
       saveConfig(config);
-      await reply(`✅ Berhasil menambahkan target baru:\n\`${input}\`\n\nTotal target sekarang: ${config.targetJids.length}`);
+
+      const nameInfo = targetName ? `• Nama: *${targetName}*\n` : '';
+      await reply(`✅ *Berhasil Mendaftarkan Target Baru!*\n\n${nameInfo}• ID JID: \`${input}\`\n• Tipe: *${targetType}*\n\nTotal target siaran sekarang: ${config.targetJids.length}`);
       break;
     }
 
     case 'deltarget': {
-      const delJid = (args[1] || '').trim();
-      if (!delJid) {
-        await reply(`❌ Masukkan JID yang ingin dihapus. Contoh:\n*${prefix}deltarget 1203630xxxxxxx@newsletter*`);
+      const delInput = (args[1] || '').trim();
+      if (!delInput) {
+        await reply(`❌ Masukkan nomor urut atau JID yang ingin dihapus.\n\nContoh:\n• Pakai Nomor: *${prefix}deltarget 1*\n• Pakai JID: *${prefix}deltarget 1203630xxxxxxx@newsletter*`);
         return;
       }
 
-      if (!config.targetJids || !config.targetJids.includes(delJid)) {
-        await reply(`❌ Target \`${delJid}\` tidak ditemukan di daftar.`);
+      const targets = config.targetJids || [];
+      let targetToRemove = delInput;
+
+      // Cek apakah input berupa nomor indeks (misal: 1, 2)
+      const numIdx = parseInt(delInput, 10);
+      if (!isNaN(numIdx) && numIdx > 0 && numIdx <= targets.length) {
+        targetToRemove = targets[numIdx - 1];
+      }
+
+      if (!targets.includes(targetToRemove)) {
+        await reply(`❌ Target \`${delInput}\` tidak ditemukan di daftar target.`);
         return;
       }
 
-      config.targetJids = config.targetJids.filter(j => j !== delJid);
+      config.targetJids = targets.filter(j => j !== targetToRemove);
       saveConfig(config);
-      await reply(`✅ Berhasil menghapus target \`${delJid}\`.\nTotal sisa target: ${config.targetJids.length}`);
+      await reply(`✅ Berhasil menghapus target:\n\`${targetToRemove}\`\n\nTotal sisa target: ${config.targetJids.length}`);
       break;
     }
 
