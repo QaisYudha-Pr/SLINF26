@@ -120,7 +120,7 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
 
   // Buat ringkasan jadwal dan tugas untuk konteks
   const scheduleSummary = JSON.stringify(schedules);
-  const pendingTasks = await getTasks('A', 'pending').catch(() => []);
+  const pendingTasks = await getTasks('ALL', 'pending').catch(() => []);
   const tasksSummary = JSON.stringify(pendingTasks);
   const activeCustomReminders = getCustomReminders().filter(r => !r.fired);
   const customRemindersSummary = JSON.stringify(activeCustomReminders);
@@ -459,374 +459,375 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
         let replyText = candidateParts.map(p => p.text).filter(Boolean).join('\n\n').trim();
         if (!replyText) continue;
 
-        // Periksa apakah AI memicu aksi penyimpanan jadwal, tugas, atau konfigurasi
-        const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE|SET_AUTOSEND|ADD_TASK|DONE_TASK|DELETE_TASK|GET_TASKS|POLL_DOSEN|CREATE_POLL|SEND_BROADCAST|SYSTEM):([\s\S]*?)\]\]/);
-        if (actionMatch) {
-          const actionType = actionMatch[1];
-          const actionPayloadStr = actionMatch[2];
+        // Periksa apakah AI memicu satu atau lebih aksi sistem (bisa batch aksi seperti menambah banyak tugas)
+        const actionMatches = [...replyText.matchAll(/\[\[ACTION:([A-Z_]+):([\s\S]*?)\]\]/g)];
+        if (actionMatches.length > 0) {
+          // Bersihkan seluruh tag action agar tidak tampil mentah ke pengguna di WhatsApp
+          let cleanReply = replyText.replace(/\[\[ACTION:[A-Z_]+:[\s\S]*?\]\]/g, '').trim();
 
-          // Bersihkan tag action agar tidak tampil mentah ke pengguna
-          const cleanReply = replyText.replace(actionMatch[0], '').trim();
+          const feedbacks = [];
+          const addedTasksList = [];
 
-          const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST'];
-          if (ownerOnlyActions.includes(actionType) && !isSenderOwner) {
-            return `${cleanReply}\n\n⚠️ _Catatan: Aksi ini memerlukan izin khusus Admin / Owner bot._`;
-          }
+          for (const match of actionMatches) {
+            let actionType = match[1];
+            const actionPayloadStr = match[2];
 
-          try {
-            const actionData = JSON.parse(actionPayloadStr);
-            if (actionType === 'BATCH_SCHEDULE') {
-              const resBatch = await saveBatchSchedule(actionData.kelas, actionData.jadwal);
-              const preview = formatSchedule(resBatch.cKey);
-              return `${cleanReply}\n\n💾 *[Jadwal Mingguan Berhasil Disimpan]*\nSeluruh jadwal Kelas ${resBatch.cKey} telah disinkronkan ke Supabase Cloud Database!\n\n${preview}\n\n📢 _Mau langsung disiarkan ke Saluran / Grup? Balas *!send* atau ketik "kirim jadwal"!_`;
-            } else if (actionType === 'ADD_SCHEDULE') {
-              const resAdd = await addScheduleItem(actionData.kelas, actionData.hari, {
-                jam: actionData.jam || '-',
-                matkul: actionData.matkul || 'Mata Kuliah',
-                dosen: actionData.dosen || '-',
-                ruang: actionData.ruang || '-'
-              });
-              const actionVerb = resAdd.isUpdated ? 'Diperbarui' : 'Ditambahkan';
-              const preview = formatSchedule(resAdd.cKey, resAdd.dKey);
-              return `${cleanReply}\n\n✅ *[Jadwal Berhasil ${actionVerb}]*\n📌 Mata Kuliah: *${actionData.matkul}* (Kelas ${resAdd.cKey})\n\n${preview}\n\n📢 _Mau langsung disiarkan ke Saluran / Grup? Balas *!send* atau ketik "kirim jadwal"!_`;
-            } else if (actionType === 'DELETE_SCHEDULE') {
-              const resDel = await deleteScheduleItem(actionData.kelas, actionData.hari, actionData.matkul);
-              const preview = formatSchedule(resDel.cKey, resDel.dKey);
-              return `${cleanReply}\n\n🗑️ *[Mata Kuliah Dihapus]*\n📌 Mata Kuliah: *${actionData.matkul}* (Kelas ${resDel.cKey} hari ${resDel.dKey})\n\n${preview}\n\n📢 _Mau siarkan perubahan ini ke Saluran / Grup? Balas *!send*!_`;
-            } else if (actionType === 'SET_AUTOSEND') {
-              const cfg = loadConfig();
-              if (!cfg.autoSend) cfg.autoSend = { timezone: 'Asia/Jakarta' };
-              cfg.autoSend.enabled = !!actionData.enabled;
-              if (actionData.time && /^\d{1,2}:\d{2}$/.test(actionData.time)) {
-                const [hour, minute] = actionData.time.split(':');
-                cfg.autoSend.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
-              }
-              saveConfig(cfg);
-              if (cfg.autoSend.enabled) {
-                if (sockInstance) startScheduler(sockInstance);
-                return `${cleanReply}\n\n⏰ *[Auto-Send Diaktifkan]* Pengiriman siaran otomatis telah DIAKTIFKAN pada jam ${actionData.time || '07:00'} WIB.`;
-              } else {
-                stopScheduler();
-                return `${cleanReply}\n\n🛑 *[Auto-Send Dimatikan]* Pengiriman siaran otomatis harian telah DINONAKTIFKAN.`;
-              }
-            } else if (actionType === 'ADD_TASK') {
-              const resTask = await addTask({
-                kelas: actionData.kelas || 'A',
-                matkul: actionData.matkul || 'Mata Kuliah',
-                judul: actionData.judul || 'Tugas Baru',
-                deadline_text: actionData.deadline || '-'
-              });
-              return `${cleanReply}\n\n📝 *[Tugas Tersimpan di Cloud Supabase]*\n▫️ *ID:* ${resTask.task.id}\n▫️ *Matkul:* ${resTask.task.matkul}\n📋 *Tugas:* ${resTask.task.judul}\n⏰ *Batas:* ${resTask.task.deadline_text}`;
-            } else if (actionType === 'DONE_TASK') {
-              const targetIdentifier = actionData.id || actionData.query || actionData.matkul || actionData.judul;
-              const resDone = await markTaskDone(targetIdentifier);
-              if (resDone.success) {
-                const t = resDone.task || {};
-                const matkulLabel = t.matkul ? `*${t.matkul}*` : '';
-                const judulLabel = t.judul ? `"${t.judul}"` : 'Tugas';
-                return `${cleanReply}\n\n🎉 *[Tugas Selesai]* ${matkulLabel} - ${judulLabel} (ID: ${t.id || targetIdentifier}) telah ditandai SELESAI di Supabase! Mantap, berkurang satu beban kuliah! 🚀`;
-              } else {
-                return `${cleanReply}\n\n⚠️ ${resDone.message || 'Gagal menandai tugas selesai.'}`;
-              }
-            } else if (actionType === 'DELETE_TASK') {
-              const targetIdentifier = actionData.id || actionData.query || actionData.matkul || actionData.judul;
-              const resDel = await deleteTask(targetIdentifier);
-              if (resDel.success) {
-                return `${cleanReply}\n\n🗑️ *[Tugas Dihapus]* Tugas *${targetIdentifier}* telah dihapus dari database Supabase.`;
-              } else {
-                return `${cleanReply}\n\n⚠️ ${resDel.message || 'Gagal menghapus tugas.'}`;
-              }
-            } else if (actionType === 'GET_TASKS') {
-              const listFormatted = await formatTaskList(actionData.kelas || 'A');
-              return `${cleanReply}\n\n${listFormatted}`;
-            } else if (actionType === 'UPDATE_TASK') {
-              const updates = {};
-              if (actionData.deadline || actionData.deadline_text) updates.deadline_text = actionData.deadline || actionData.deadline_text;
-              if (actionData.judul) updates.judul = actionData.judul;
-              if (actionData.matkul) updates.matkul = actionData.matkul;
-              if (actionData.status) updates.status = actionData.status;
+            const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST'];
+            if (ownerOnlyActions.includes(actionType) && !isSenderOwner) {
+              feedbacks.push(`⚠️ _Catatan: Aksi ${actionType} memerlukan izin khusus Admin / Owner bot._`);
+              continue;
+            }
 
-              const resUpdate = await updateTask(actionData.id, updates);
-              if (resUpdate.success) {
-                const t = resUpdate.task || {};
-                return `${cleanReply}\n\n✏️ *[Tugas Berhasil Diperbarui]*\n▫️ *ID:* ${t.id || actionData.id}\n▫️ *Matkul:* ${t.matkul || '-'}\n📋 *Tugas:* ${t.judul || '-'}\n⏰ *Batas Baru:* ${t.deadline_text || '-'}`;
-              } else {
-                return `${cleanReply}\n\n⚠️ ${resUpdate.message || 'Gagal memperbarui data tugas.'}`;
-              }
-            } else if (actionType === 'ADD_REMINDER') {
-              const cfg = loadConfig();
-              let targetDest = remoteJid; // default ke chat saat ini
-              const targetStr = (actionData.target || '').toLowerCase().trim();
+            try {
+              const actionData = JSON.parse(actionPayloadStr);
 
-              if (['gw', 'me', 'saya', 'pc', 'dm', 'pribadi'].includes(targetStr)) {
-                targetDest = senderJid || remoteJid;
-                if (!targetDest.endsWith('@s.whatsapp.net')) {
-                  const numOnly = (senderJid || '').replace(/[^0-9]/g, '');
-                  if (numOnly) targetDest = `${numOnly}@s.whatsapp.net`;
+              // 🛡️ Safeguard cerdas untuk query gabungan / polling intent
+              const qLower = (userQuestion || '').toLowerCase();
+              const isPollIntent = qLower.includes('poll') || qLower.includes('polling') || qLower.includes('kehadiran dosen') || qLower.includes('presensi');
+              if (actionType === 'SEND_BROADCAST' && isPollIntent) {
+                actionType = 'POLL_DOSEN';
+                if (!actionData.lecturers || actionData.lecturers.length === 0) actionData.lecturers = defaultLecturers;
+                if (!actionData.target) {
+                  if (qLower.includes('testing') || qLower.includes('saluran') || qLower.includes('channel') || qLower.includes('siaran')) {
+                    actionData.target = 'saluran';
+                  } else if (qLower.includes('grup') || qLower.includes('group')) {
+                    actionData.target = 'grup';
+                  }
                 }
-              } else if (targetStr === 'saluran' || targetStr === 'channel') {
-                const nl = (cfg.targetJids || []).filter(t => t.endsWith('@newsletter'));
-                if (nl.length > 0) targetDest = nl[0];
-              } else if (targetStr === 'grup' || targetStr === 'group') {
-                if (remoteJid.endsWith('@g.us')) {
-                  targetDest = remoteJid;
+              }
+
+              if (actionType === 'BATCH_SCHEDULE') {
+                const resBatch = await saveBatchSchedule(actionData.kelas, actionData.jadwal);
+                const preview = formatSchedule(resBatch.cKey);
+                feedbacks.push(`💾 *[Jadwal Mingguan Berhasil Disimpan]* (Kelas ${resBatch.cKey})\n\n${preview}`);
+              } else if (actionType === 'ADD_SCHEDULE') {
+                const resAdd = await addScheduleItem(actionData.kelas, actionData.hari, {
+                  jam: actionData.jam || '-',
+                  matkul: actionData.matkul || 'Mata Kuliah',
+                  dosen: actionData.dosen || '-',
+                  ruang: actionData.ruang || '-'
+                });
+                const preview = formatSchedule(resAdd.cKey, resAdd.dKey);
+                feedbacks.push(`✅ *[Jadwal ${resAdd.isUpdated ? 'Diperbarui' : 'Ditambahkan'}]* *${actionData.matkul}* (Kelas ${resAdd.cKey})\n\n${preview}`);
+              } else if (actionType === 'DELETE_SCHEDULE') {
+                const resDel = await deleteScheduleItem(actionData.kelas, actionData.hari, actionData.matkul);
+                const preview = formatSchedule(resDel.cKey, resDel.dKey);
+                feedbacks.push(`🗑️ *[Mata Kuliah Dihapus]* *${actionData.matkul}* (Kelas ${resDel.cKey})\n\n${preview}`);
+              } else if (actionType === 'SET_AUTOSEND') {
+                const cfg = loadConfig();
+                if (!cfg.autoSend) cfg.autoSend = { timezone: 'Asia/Jakarta' };
+                cfg.autoSend.enabled = !!actionData.enabled;
+                if (actionData.time && /^\d{1,2}:\d{2}$/.test(actionData.time)) {
+                  const [hour, minute] = actionData.time.split(':');
+                  cfg.autoSend.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
+                }
+                saveConfig(cfg);
+                if (cfg.autoSend.enabled) {
+                  if (sockInstance) startScheduler(sockInstance);
+                  feedbacks.push(`⏰ *[Auto-Send Diaktifkan]* Jam ${actionData.time || '07:00'} WIB.`);
                 } else {
-                  const gr = (cfg.targetJids || []).filter(t => t.endsWith('@g.us'));
-                  if (gr.length > 0) targetDest = gr[0];
+                  stopScheduler();
+                  feedbacks.push(`🛑 *[Auto-Send Dimatikan]* Pengiriman siaran otomatis dinonaktifkan.`);
                 }
-              }
-
-              const newRem = addCustomReminder({
-                text: actionData.text || 'Pengingat Deadline / Agenda',
-                timeStr: actionData.time || '19:00',
-                dayStr: actionData.day || '',
-                targetJid: targetDest,
-                creatorJid: senderJid || remoteJid
-              });
-
-              const isDmToUser = targetDest && targetDest.endsWith('@s.whatsapp.net');
-              const targetDesc = isDmToUser 
-                ? 'DM / Chat Pribadimu' 
-                : (targetDest.endsWith('@newsletter') ? 'Saluran WhatsApp' : (targetDest.endsWith('@g.us') ? 'Grup WhatsApp' : 'Chat ini'));
-
-              const dayLabel = newRem.day ? ` (Hari: *${newRem.day}*)` : '';
-              return `${cleanReply}\n\n⏰ *[Pengingat Kustom Berhasil Disetel]*\n▫️ *ID:* ${newRem.id}\n📌 *Agenda:* ${newRem.text}\n⏰ *Waktu:* ${newRem.time} WIB${dayLabel}\n🎯 *Tujuan:* *${targetDesc}*\n\n💡 _Bot akan otomatis mengirimkan pengingat tepat waktu ke ${targetDesc}!_`;
-            } else if (actionType === 'DELETE_REMINDER') {
-              const isDel = deleteCustomReminder(actionData.id);
-              if (isDel) {
-                return `${cleanReply}\n\n🗑️ *[Pengingat Dihapus]* Pengingat ID *${actionData.id}* telah berhasil dihapus.`;
-              } else {
-                return `${cleanReply}\n\n⚠️ Pengingat ID *${actionData.id}* tidak ditemukan.`;
-              }
-            } else if (actionType === 'GET_REMINDERS') {
-              const listRem = formatRemindersList();
-              return `${cleanReply}\n\n${listRem}`;
-            } else if (actionType === 'SET_REMINDER') {
-              const cfg = loadConfig();
-              if (!cfg.reminder) cfg.reminder = { enabled: true, cronTime: '0 19 * * *' };
-              if (typeof actionData.enabled === 'boolean') {
-                cfg.reminder.enabled = actionData.enabled;
-              }
-              if (actionData.time && /^\d{1,2}:\d{2}$/.test(actionData.time)) {
-                const [hour, minute] = actionData.time.split(':');
-                cfg.reminder.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
-              }
-              saveConfig(cfg);
-              if (sockInstance) startScheduler(sockInstance);
-              const statusStr = cfg.reminder.enabled ? `DIAKTIFKAN pada jam ${actionData.time || '19:00'} WIB` : 'DINONAKTIFKAN';
-              return `${cleanReply}\n\n⏰ *[Pengingat Tugas Otomatis Diperbarui]* Pengingat tugas malam harian telah *${statusStr}*.`;
-            } else if (actionType === 'SET_CONFIG') {
-              const cfg = loadConfig();
-              let changed = [];
-              if (actionData.prefix) {
-                cfg.prefix = actionData.prefix;
-                changed.push(`Prefix: \`${cfg.prefix}\``);
-              }
-              saveConfig(cfg);
-              return `${cleanReply}\n\n⚙️ *[Pengaturan Bot Diperbarui]*\n${changed.join('\n') || 'Pengaturan berhasil disimpan.'}`;
-            }
-
-            // 🛡️ Safeguard cerdas untuk query gabungan / abstrak:
-            // Jika AI salah mengira instruksi sebagai SEND_BROADCAST padahal pengguna menyebut polling/presensi dosen
-            const qLower = (userQuestion || '').toLowerCase();
-            const isPollIntent = qLower.includes('poll') || qLower.includes('polling') || qLower.includes('kehadiran dosen') || qLower.includes('presensi');
-            if (actionType === 'SEND_BROADCAST' && isPollIntent) {
-              console.log('🔄 [AI Safeguard] Re-routing SEND_BROADCAST ke POLL_DOSEN (Polling intent terdeteksi).');
-              actionType = 'POLL_DOSEN';
-              if (!actionData.lecturers || actionData.lecturers.length === 0) {
-                actionData.lecturers = defaultLecturers;
-              }
-              if (!actionData.target) {
-                if (qLower.includes('testing') || qLower.includes('saluran') || qLower.includes('channel') || qLower.includes('siaran')) {
-                  actionData.target = 'saluran';
-                } else if (qLower.includes('grup') || qLower.includes('group')) {
-                  actionData.target = 'grup';
+              } else if (actionType === 'ADD_TASK') {
+                const resTask = await addTask({
+                  kelas: actionData.kelas || 'A',
+                  matkul: actionData.matkul || 'Mata Kuliah',
+                  judul: actionData.judul || 'Tugas Baru',
+                  deadline_text: actionData.deadline || '-'
+                });
+                addedTasksList.push(resTask.task);
+              } else if (actionType === 'DONE_TASK') {
+                const targetIdentifier = actionData.id || actionData.query || actionData.matkul || actionData.judul;
+                const resDone = await markTaskDone(targetIdentifier);
+                if (resDone.success) {
+                  const t = resDone.task || {};
+                  const matkulLabel = t.matkul ? `*${t.matkul}*` : '';
+                  const judulLabel = t.judul ? `"${t.judul}"` : 'Tugas';
+                  feedbacks.push(`🎉 *[Tugas Selesai]* ${matkulLabel} - ${judulLabel} (ID: ${t.id || targetIdentifier}) telah ditandai SELESAI di Supabase! Mantap, berkurang satu beban kuliah! 🚀`);
+                } else {
+                  feedbacks.push(`⚠️ ${resDone.message || 'Gagal menandai tugas selesai.'}`);
                 }
-              }
-            }
+              } else if (actionType === 'DELETE_TASK') {
+                const targetIdentifier = actionData.id || actionData.query || actionData.matkul || actionData.judul;
+                const resDel = await deleteTask(targetIdentifier);
+                if (resDel.success) {
+                  feedbacks.push(`🗑️ *[Tugas Dihapus]* Tugas *${targetIdentifier}* telah dihapus dari database Supabase.`);
+                } else {
+                  feedbacks.push(`⚠️ ${resDel.message || 'Gagal menghapus tugas.'}`);
+                }
+              } else if (actionType === 'GET_TASKS') {
+                const listFormatted = await formatTaskList(actionData.kelas || 'A');
+                feedbacks.push(listFormatted);
+              } else if (actionType === 'UPDATE_TASK') {
+                const updates = {};
+                if (actionData.deadline || actionData.deadline_text) updates.deadline_text = actionData.deadline || actionData.deadline_text;
+                if (actionData.judul) updates.judul = actionData.judul;
+                if (actionData.matkul) updates.matkul = actionData.matkul;
+                if (actionData.status) updates.status = actionData.status;
 
-            if (actionType === 'POLL_DOSEN') {
-              if (sockInstance) {
-                const lecturers = Array.isArray(actionData.lecturers) && actionData.lecturers.length > 0 
-                  ? actionData.lecturers 
-                  : defaultLecturers;
+                const resUpdate = await updateTask(actionData.id, updates);
+                if (resUpdate.success) {
+                  const t = resUpdate.task || {};
+                  feedbacks.push(`✏️ *[Tugas Diperbarui]* (ID: ${t.id || actionData.id}) *${t.matkul || '-'}* - ${t.judul || '-'} | Batas: *${t.deadline_text || '-'}*`);
+                } else {
+                  feedbacks.push(`⚠️ ${resUpdate.message || 'Gagal memperbarui data tugas.'}`);
+                }
+              } else if (actionType === 'ADD_REMINDER') {
+                const cfg = loadConfig();
+                let targetDest = remoteJid;
+                const targetStr = (actionData.target || '').toLowerCase().trim();
 
-                const config = loadConfig();
-                const allTargets = config.targetJids || [];
-                let destJids = [remoteJid]; // default ke chat saat ini
-
-                if (actionData.target) {
-                  const tStr = String(actionData.target).toLowerCase().trim();
-                  if (tStr.includes('@newsletter') || tStr.includes('@g.us')) {
-                    destJids = [actionData.target];
-                  } else if (tStr.includes('saluran') || tStr.includes('siaran') || tStr.includes('testing') || tStr.includes('channel') || tStr.includes('newsletter')) {
-                    const nl = allTargets.filter(t => t.endsWith('@newsletter'));
-                    if (nl.length > 0) destJids = nl;
-                  } else if (tStr.includes('grup') || tStr.includes('group')) {
-                    const gr = allTargets.filter(t => t.endsWith('@g.us'));
-                    if (gr.length > 0) destJids = gr;
-                  } else if (tStr.includes('semua') || tStr.includes('all') || tStr === 'target') {
-                    if (allTargets.length > 0) destJids = allTargets;
-                  } else if (/^\d+$/.test(tStr)) {
-                    const idx = parseInt(tStr, 10) - 1;
-                    if (allTargets[idx]) destJids = [allTargets[idx]];
-                  } else if (allTargets.length === 1) {
-                    destJids = allTargets;
+                if (['gw', 'me', 'saya', 'pc', 'dm', 'pribadi'].includes(targetStr)) {
+                  targetDest = senderJid || remoteJid;
+                  if (!targetDest.endsWith('@s.whatsapp.net')) {
+                    const numOnly = (senderJid || '').replace(/[^0-9]/g, '');
+                    if (numOnly) targetDest = `${numOnly}@s.whatsapp.net`;
+                  }
+                } else if (targetStr === 'saluran' || targetStr === 'channel') {
+                  const nl = (cfg.targetJids || []).filter(t => t.endsWith('@newsletter'));
+                  if (nl.length > 0) targetDest = nl[0];
+                } else if (targetStr === 'grup' || targetStr === 'group') {
+                  if (remoteJid.endsWith('@g.us')) {
+                    targetDest = remoteJid;
+                  } else {
+                    const gr = (cfg.targetJids || []).filter(t => t.endsWith('@g.us'));
+                    if (gr.length > 0) targetDest = gr[0];
                   }
                 }
 
-                (async () => {
-                  try {
-                    for (const destJid of destJids) {
-                      if (destJid.endsWith('@newsletter')) {
-                        // Di Saluran: Kirim 1 Polling Asli All-in-One (dengan fallback otomatis jika server menolak)
-                        await sendNativePoll(
-                          sockInstance,
-                          destJid,
-                          `🎓 Polling Kehadiran Dosen (${todayKey})`,
-                          [
-                            '✅ Semua Dosen Hadir',
-                            ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
-                            '❓ Belum Ada Info Pasti'
-                          ],
-                          0
-                        );
-                      } else {
-                        for (const lecturer of lecturers) {
-                          await new Promise(r => setTimeout(r, 600));
+                const newRem = addCustomReminder({
+                  text: actionData.text || 'Pengingat Deadline / Agenda',
+                  timeStr: actionData.time || '19:00',
+                  dayStr: actionData.day || '',
+                  targetJid: targetDest,
+                  creatorJid: senderJid || remoteJid
+                });
+
+                const isDmToUser = targetDest && targetDest.endsWith('@s.whatsapp.net');
+                const targetDesc = isDmToUser 
+                  ? 'DM / Chat Pribadimu' 
+                  : (targetDest.endsWith('@newsletter') ? 'Saluran WhatsApp' : (targetDest.endsWith('@g.us') ? 'Grup WhatsApp' : 'Chat ini'));
+
+                const dayLabel = newRem.day ? ` (Hari: *${newRem.day}*)` : '';
+                feedbacks.push(`⏰ *[Pengingat Disetel]* (ID: ${newRem.id}) 📌 *${newRem.text}* | Jam: *${newRem.time} WIB*${dayLabel} | Target: *${targetDesc}*`);
+              } else if (actionType === 'DELETE_REMINDER') {
+                const isDel = deleteCustomReminder(actionData.id);
+                if (isDel) {
+                  feedbacks.push(`🗑️ *[Pengingat Dihapus]* Pengingat ID *${actionData.id}* telah berhasil dihapus.`);
+                } else {
+                  feedbacks.push(`⚠️ Pengingat ID *${actionData.id}* tidak ditemukan.`);
+                }
+              } else if (actionType === 'GET_REMINDERS') {
+                const listRem = formatRemindersList();
+                feedbacks.push(listRem);
+              } else if (actionType === 'SET_REMINDER') {
+                const cfg = loadConfig();
+                if (!cfg.reminder) cfg.reminder = { enabled: true, cronTime: '0 19 * * *' };
+                if (typeof actionData.enabled === 'boolean') {
+                  cfg.reminder.enabled = actionData.enabled;
+                }
+                if (actionData.time && /^\d{1,2}:\d{2}$/.test(actionData.time)) {
+                  const [hour, minute] = actionData.time.split(':');
+                  cfg.reminder.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
+                }
+                saveConfig(cfg);
+                if (sockInstance) startScheduler(sockInstance);
+                const statusStr = cfg.reminder.enabled ? `DIAKTIFKAN pada jam ${actionData.time || '19:00'} WIB` : 'DINONAKTIFKAN';
+                feedbacks.push(`⏰ *[Pengingat Otomatis Diperbarui]* Pengingat tugas malam harian telah *${statusStr}*.`);
+              } else if (actionType === 'SET_CONFIG') {
+                const cfg = loadConfig();
+                let changed = [];
+                if (actionData.prefix) {
+                  cfg.prefix = actionData.prefix;
+                  changed.push(`Prefix: \`${cfg.prefix}\``);
+                }
+                saveConfig(cfg);
+                feedbacks.push(`⚙️ *[Pengaturan Bot Diperbarui]* ${changed.join(', ') || 'Disimpan'}`);
+              } else if (actionType === 'POLL_DOSEN') {
+                if (sockInstance) {
+                  const lecturers = Array.isArray(actionData.lecturers) && actionData.lecturers.length > 0 
+                    ? actionData.lecturers 
+                    : defaultLecturers;
+
+                  const config = loadConfig();
+                  const allTargets = config.targetJids || [];
+                  let destJids = [remoteJid];
+
+                  if (actionData.target) {
+                    const tStr = String(actionData.target).toLowerCase().trim();
+                    if (tStr.includes('@newsletter') || tStr.includes('@g.us')) {
+                      destJids = [actionData.target];
+                    } else if (tStr.includes('saluran') || tStr.includes('siaran') || tStr.includes('testing') || tStr.includes('channel') || tStr.includes('newsletter')) {
+                      const nl = allTargets.filter(t => t.endsWith('@newsletter'));
+                      if (nl.length > 0) destJids = nl;
+                    } else if (tStr.includes('grup') || tStr.includes('group')) {
+                      const gr = allTargets.filter(t => t.endsWith('@g.us'));
+                      if (gr.length > 0) destJids = gr;
+                    } else if (tStr.includes('semua') || tStr.includes('all') || tStr === 'target') {
+                      if (allTargets.length > 0) destJids = allTargets;
+                    } else if (/^\d+$/.test(tStr)) {
+                      const idx = parseInt(tStr, 10) - 1;
+                      if (allTargets[idx]) destJids = [allTargets[idx]];
+                    } else if (allTargets.length === 1) {
+                      destJids = allTargets;
+                    }
+                  }
+
+                  (async () => {
+                    try {
+                      for (const destJid of destJids) {
+                        if (destJid.endsWith('@newsletter')) {
                           await sendNativePoll(
                             sockInstance,
                             destJid,
-                            `🎓 Kehadiran: ${lecturer}`,
-                            ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
-                            1
+                            `🎓 Polling Kehadiran Dosen (${todayKey})`,
+                            [
+                              '✅ Semua Dosen Hadir',
+                              ...lecturers.map(d => `❌ ${d} (Kosong/Batal)`),
+                              '❓ Belum Ada Info Pasti'
+                            ],
+                            0
                           );
+                        } else {
+                          for (const lecturer of lecturers) {
+                            await new Promise(r => setTimeout(r, 600));
+                            await sendNativePoll(
+                              sockInstance,
+                              destJid,
+                              `🎓 Kehadiran: ${lecturer}`,
+                              ['✅ Hadir', '❌ Tidak', '❓ Belum Diketahui'],
+                              1
+                            );
+                          }
                         }
                       }
+                    } catch (errP) {
+                      console.error('[AI Poll Lecturer Error]:', errP.message);
                     }
-                  } catch (errP) {
-                    console.error('[AI Poll Lecturer Error]:', errP.message);
-                  }
-                })();
+                  })();
 
-                const isHere = destJids.length === 1 && destJids[0] === remoteJid;
-                const targetLabel = isHere ? 'chat ini' : `Saluran/Target terpilih (${destJids.map(j => j.split('@')[0]).join(', ')})`;
-                return `${cleanReply}\n\n📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* berhasil dikirim ke *${targetLabel}*!`;
-              }
-              return cleanReply;
-            } else if (actionType === 'CREATE_POLL') {
-              if (sockInstance) {
-                const pollName = actionData.name || 'Polling';
-                const pollOpts = Array.isArray(actionData.options) && actionData.options.length >= 2 ? actionData.options : ['Ya', 'Tidak'];
-                const config = loadConfig();
-                const allTargets = config.targetJids || [];
-                let destJids = [remoteJid];
-
-                if (actionData.target) {
-                  const tStr = String(actionData.target).toLowerCase().trim();
-                  if (tStr.includes('@newsletter') || tStr.includes('@g.us')) {
-                    destJids = [actionData.target];
-                  } else if (tStr.includes('saluran') || tStr.includes('siaran') || tStr.includes('testing') || tStr.includes('channel') || tStr.includes('newsletter')) {
-                    const nl = allTargets.filter(t => t.endsWith('@newsletter'));
-                    if (nl.length > 0) destJids = nl;
-                  } else if (tStr.includes('grup') || tStr.includes('group')) {
-                    const gr = allTargets.filter(t => t.endsWith('@g.us'));
-                    if (gr.length > 0) destJids = gr;
-                  } else if (tStr.includes('semua') || tStr.includes('all') || tStr === 'target') {
-                    if (allTargets.length > 0) destJids = allTargets;
-                  } else if (/^\d+$/.test(tStr)) {
-                    const idx = parseInt(tStr, 10) - 1;
-                    if (allTargets[idx]) destJids = [allTargets[idx]];
-                  } else if (allTargets.length === 1) {
-                    destJids = allTargets;
-                  }
-                }
-
-                try {
-                  for (const destJid of destJids) {
-                    await sendNativePoll(sockInstance, destJid, pollName, pollOpts, 1);
-                  }
                   const isHere = destJids.length === 1 && destJids[0] === remoteJid;
-                  const targetLabel = isHere ? 'chat ini' : `${destJids.length} target`;
-                  return `${cleanReply}\n\n📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke *${targetLabel}*!`;
-                } catch (ePoll) {
-                  return `${cleanReply}\n\n⚠️ Gagal membuat polling: ${ePoll.message}`;
+                  const targetLabel = isHere ? 'chat ini' : `Saluran/Target terpilih (${destJids.map(j => j.split('@')[0]).join(', ')})`;
+                  feedbacks.push(`📊 *[Polling Terkirim]* Polling kehadiran untuk *${lecturers.join(', ')}* dikirim ke *${targetLabel}*!`);
+                }
+              } else if (actionType === 'CREATE_POLL') {
+                if (sockInstance) {
+                  const pollName = actionData.name || 'Polling';
+                  const pollOpts = Array.isArray(actionData.options) && actionData.options.length >= 2 ? actionData.options : ['Ya', 'Tidak'];
+                  const config = loadConfig();
+                  const allTargets = config.targetJids || [];
+                  let destJids = [remoteJid];
+
+                  if (actionData.target) {
+                    const tStr = String(actionData.target).toLowerCase().trim();
+                    if (tStr.includes('@newsletter') || tStr.includes('@g.us')) {
+                      destJids = [actionData.target];
+                    } else if (tStr.includes('saluran') || tStr.includes('siaran') || tStr.includes('testing') || tStr.includes('channel') || tStr.includes('newsletter')) {
+                      const nl = allTargets.filter(t => t.endsWith('@newsletter'));
+                      if (nl.length > 0) destJids = nl;
+                    } else if (tStr.includes('grup') || tStr.includes('group')) {
+                      const gr = allTargets.filter(t => t.endsWith('@g.us'));
+                      if (gr.length > 0) destJids = gr;
+                    } else if (tStr.includes('semua') || tStr.includes('all') || tStr === 'target') {
+                      if (allTargets.length > 0) destJids = allTargets;
+                    } else if (/^\d+$/.test(tStr)) {
+                      const idx = parseInt(tStr, 10) - 1;
+                      if (allTargets[idx]) destJids = [allTargets[idx]];
+                    } else if (allTargets.length === 1) {
+                      destJids = allTargets;
+                    }
+                  }
+
+                  try {
+                    for (const destJid of destJids) {
+                      await sendNativePoll(sockInstance, destJid, pollName, pollOpts, 1);
+                    }
+                    const isHere = destJids.length === 1 && destJids[0] === remoteJid;
+                    const targetLabel = isHere ? 'chat ini' : `${destJids.length} target`;
+                    feedbacks.push(`📊 *[Polling Berhasil Dibuat]* Polling "${pollName}" sudah dikirim ke *${targetLabel}*!`);
+                  } catch (ePoll) {
+                    feedbacks.push(`⚠️ Gagal membuat polling: ${ePoll.message}`);
+                  }
+                }
+              } else if (actionType === 'SEND_BROADCAST') {
+                if (sockInstance) {
+                  const config = loadConfig();
+                  const allTargets = config.targetJids || [];
+                  let customTargets = null;
+                  const tTarget = (actionData.target || '').toLowerCase().trim();
+
+                  if (tTarget === 'saluran' || tTarget === 'channel') {
+                    customTargets = allTargets.filter(t => t.endsWith('@newsletter'));
+                  } else if (tTarget === 'grup' || tTarget === 'group') {
+                    customTargets = allTargets.filter(t => t.endsWith('@g.us'));
+                  } else if (tTarget === 'sini' || tTarget === 'chat') {
+                    customTargets = [remoteJid];
+                  } else if (/^\d+$/.test(tTarget)) {
+                    const idx = parseInt(tTarget, 10) - 1;
+                    if (allTargets[idx]) customTargets = [allTargets[idx]];
+                  }
+
+                  const bRes = await sendDailyBroadcast(sockInstance, actionData.day, customTargets, actionData.text);
+                  if (bRes.success) {
+                    const targetLabel = customTargets ? `${bRes.sentCount} target terpilih` : `seluruh ${bRes.sentCount} target terdaftar`;
+                    feedbacks.push(`📢 *[Siaran Berhasil]* Pesan dikirim ke *${targetLabel}*!`);
+                  } else {
+                    feedbacks.push(`⚠️ Gagal broadcast: ${bRes.message}`);
+                  }
+                }
+              } else if (actionType === 'REMEMBER') {
+                if (actionData.key && actionData.value) {
+                  saveFact(memoryTargetId, actionData.key, String(actionData.value));
+                  console.log(`🧠 [AI Memory Saved] ${memoryTargetId} -> ${actionData.key}: ${actionData.value}`);
+                }
+              } else if (actionType === 'FORGET') {
+                if (actionData.key) {
+                  removeFact(memoryTargetId, actionData.key);
+                  console.log(`🧠 [AI Memory Removed] ${memoryTargetId} -> ${actionData.key}`);
+                }
+              } else if (actionType === 'SYSTEM') {
+                if (actionData.action === 'status') {
+                  const dbStat = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Normal' })) : { message: '🟢 Terhubung' };
+                  feedbacks.push(`📊 *[Status Sistem]*\n• Status Bot: 🟢 Aktif & Terhubung\n• Database Cloud: ${dbStat.message}`);
+                } else if (actionData.action === 'restart') {
+                  if (isSenderOwner) {
+                    setTimeout(() => process.exit(0), 1500);
+                    feedbacks.push(`🔄 *[Me-restart Bot]* Bot sedang dimuat ulang, tunggu 3 detik ya...`);
+                  }
                 }
               }
-              return cleanReply;
-            } else if (actionType === 'SEND_BROADCAST') {
-              if (sockInstance) {
-                const config = loadConfig();
-                const allTargets = config.targetJids || [];
-                let customTargets = null;
-                const tTarget = (actionData.target || '').toLowerCase().trim();
-
-                if (tTarget === 'saluran' || tTarget === 'channel') {
-                  customTargets = allTargets.filter(t => t.endsWith('@newsletter'));
-                } else if (tTarget === 'grup' || tTarget === 'group') {
-                  customTargets = allTargets.filter(t => t.endsWith('@g.us'));
-                } else if (tTarget === 'sini' || tTarget === 'chat') {
-                  customTargets = [remoteJid];
-                } else if (/^\d+$/.test(tTarget)) {
-                  const idx = parseInt(tTarget, 10) - 1;
-                  if (allTargets[idx]) customTargets = [allTargets[idx]];
-                }
-
-                const bRes = await sendDailyBroadcast(sockInstance, actionData.day, customTargets, actionData.text);
-                if (bRes.success) {
-                  const targetLabel = customTargets ? `${bRes.sentCount} target terpilih` : `seluruh ${bRes.sentCount} target terdaftar`;
-                  return `${cleanReply}\n\n📢 *[Siaran Berhasil]* Pesan telah berhasil dikirim ke *${targetLabel}*!`;
-                } else {
-                  return `${cleanReply}\n\n⚠️ Gagal broadcast: ${bRes.message}`;
-                }
-              }
-              return cleanReply;
-
-            // ✅ FIX: REMEMBER & FORGET dipindah ke level atas (sebelumnya salah nested di SYSTEM)
-            } else if (actionType === 'REMEMBER') {
-              if (actionData.key && actionData.value) {
-                saveFact(memoryTargetId, actionData.key, String(actionData.value));
-                console.log(`🧠 [AI Memory Saved] ${memoryTargetId} -> ${actionData.key}: ${actionData.value}`);
-              }
-              // Simpan percakapan ke sesi
-              try {
-                addSessionTurn(sessionId, 'user', userQuestion || '(mengirim lampiran)');
-                addSessionTurn(sessionId, 'model', cleanReply);
-              } catch (eMem) {}
-              return cleanReply || `✅ Oke, aku sudah ingat ya!`;
-
-            } else if (actionType === 'FORGET') {
-              if (actionData.key) {
-                removeFact(memoryTargetId, actionData.key);
-                console.log(`🧠 [AI Memory Removed] ${memoryTargetId} -> ${actionData.key}`);
-              }
-              try {
-                addSessionTurn(sessionId, 'user', userQuestion || '(mengirim lampiran)');
-                addSessionTurn(sessionId, 'model', cleanReply);
-              } catch (eMem) {}
-              return cleanReply || `🗑️ Oke, catatan itu sudah aku hapus!`;
-
-            } else if (actionType === 'SYSTEM') {
-              if (actionData.action === 'status') {
-                const dbStat = checkDatabaseStatus ? await checkDatabaseStatus().catch(() => ({ message: '🟢 Normal' })) : { message: '🟢 Terhubung' };
-                return `${cleanReply}\n\n📊 *[Status Sistem]*\n• Status Bot: 🟢 Aktif & Terhubung\n• Database Cloud: ${dbStat.message}`;
-              } else if (actionData.action === 'restart') {
-                if (!isSenderOwner) return `${cleanReply}\n\n⚠️ Hanya Owner yang boleh me-restart bot.`;
-                setTimeout(() => process.exit(0), 1500);
-                return `${cleanReply}\n\n🔄 *[Me-restart Bot]* Bot sedang dimuat ulang, tunggu 3 detik ya...`;
-              }
+            } catch (eAction) {
+              console.error('❌ [Action Execution Error]:', eAction.message);
             }
-          } catch (eAction) {
-            console.error('❌ [Action Execution Error]:', eAction.message);
           }
 
-          // Simpan percakapan ke memori sesi persisten (hanya teks murni)
+          // Format daftar tugas baru jika ada
+          if (addedTasksList.length > 0) {
+            if (addedTasksList.length === 1) {
+              const t = addedTasksList[0];
+              feedbacks.unshift(`📝 *[Tugas Tersimpan di Cloud Supabase]*\n▫️ *ID:* ${t.id}\n▫️ *Matkul:* ${t.matkul}\n📋 *Tugas:* ${t.judul}\n⏰ *Batas:* ${t.deadline_text}`);
+            } else {
+              let batchText = `📝 *[${addedTasksList.length} Tugas Berhasil Disimpan di Cloud Supabase]*:\n`;
+              addedTasksList.forEach(t => {
+                batchText += `▫️ *[ID: ${t.id}]* *${t.matkul}* – ${t.judul} (Batas: *${t.deadline_text}*)\n`;
+              });
+              feedbacks.unshift(batchText.trim());
+            }
+          }
+
+          let finalReply = cleanReply;
+          if (feedbacks.length > 0) {
+            finalReply = finalReply ? `${finalReply}\n\n${feedbacks.join('\n\n')}` : feedbacks.join('\n\n');
+          }
+
+          // Simpan percakapan ke memori sesi persisten
           try {
             addSessionTurn(sessionId, 'user', userQuestion || '(mengirim lampiran)');
-            addSessionTurn(sessionId, 'model', cleanReply);
+            addSessionTurn(sessionId, 'model', finalReply);
           } catch (eMem) {}
 
-          return cleanReply;
+          return finalReply;
         }
 
         // Simpan percakapan reguler ke memori sesi persisten

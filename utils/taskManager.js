@@ -69,15 +69,22 @@ async function fetchSupabase(endpoint, options = {}) {
 /**
  * Mengambil daftar tugas (aktif / pending)
  */
-async function getTasks(classKey = 'A', status = 'pending') {
-  const cKey = (classKey || 'A').toUpperCase();
+async function getTasks(classKey = 'ALL', status = 'pending') {
+  const cKey = classKey ? classKey.toUpperCase() : 'ALL';
+  let endpoint = `tasks?status=eq.${status}&order=id.asc`;
+  if (cKey !== 'ALL') {
+    endpoint = `tasks?kelas=eq.${cKey}&status=eq.${status}&order=id.asc`;
+  }
 
   try {
-    const res = await fetchSupabase(`tasks?kelas=eq.${cKey}&status=eq.${status}&order=id.asc`);
+    const res = await fetchSupabase(endpoint);
     if (res && res.ok) {
       const data = await res.json();
-      // Update cache lokal
-      saveLocalTasks(data);
+      // Update cache lokal secara aman (upsert per id)
+      const current = getLocalTasks();
+      const currentMap = new Map(current.map(t => [t.id, t]));
+      data.forEach(t => currentMap.set(t.id, t));
+      saveLocalTasks([...currentMap.values()]);
       return data;
     }
   } catch (err) {
@@ -86,7 +93,11 @@ async function getTasks(classKey = 'A', status = 'pending') {
 
   // Fallback lokal jika offline
   const local = getLocalTasks();
-  return local.filter(t => (t.kelas || 'A').toUpperCase() === cKey && t.status === status);
+  return local.filter(t => {
+    const matchClass = (cKey === 'ALL') ? true : (t.kelas || 'A').toUpperCase() === cKey;
+    const matchStatus = status ? t.status === status : true;
+    return matchClass && matchStatus;
+  });
 } 
 
 /**
