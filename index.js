@@ -1059,8 +1059,8 @@ async function handleIncomingMessage(msg) {
   if (usedPrefix !== null) {
     cleanCommandText = trimmedText.slice(usedPrefix.length).trim();
   } else {
-    // ⚡ Fitur Quick-Reply Angka 1-7 jika reply pesan menu bot langsung
-    if (quotedText && quotedText.toLowerCase().includes('menu') && /^[1-7]$/.test(trimmedText)) {
+    // ⚡ Fitur Quick-Reply Angka 1-7 (baik membalas menu maupun ketik angka 1-7 langsung)
+    if (/^[1-7]$/.test(trimmedText)) {
       const numChoice = trimmedText.trim();
       if (numChoice === '1') cleanCommandText = 'today';
       else if (numChoice === '2') cleanCommandText = 'tugas';
