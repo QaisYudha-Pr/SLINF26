@@ -729,14 +729,22 @@ async function handleIncomingMessage(msg) {
 
   const trimmedText = messageContent.trim();
 
+  // 🛡️ PENTING: Jika pesan berasal dari bot itu sendiri (fromMe) dan BUKAN perintah berawalan prefix:
+  // Langsung abaikan agar bot tidak pernah membalas pesannya sendiri (mencegah loop tak terhingga!)
+  if (fromMe && !trimmedText.startsWith(prefix)) {
+    return;
+  }
+
   // Tampilkan log pesan masuk ke terminal agar jelas
   if (trimmedText) {
     console.log(`📩 [Pesan Masuk] Dari: ${sender} (fromMe: ${fromMe}) | Teks: "${trimmedText}"`);
   }
 
+  const qLower = trimmedText.toLowerCase();
+
   // 1. Cek apakah ada data terusan dari Saluran WhatsApp di dalam pesan
   const fwdNewsletter = findForwardedNewsletterInfo(msg.message);
-  if (fwdNewsletter && fwdNewsletter.newsletterJid) {
+  if (!fromMe && fwdNewsletter && fwdNewsletter.newsletterJid) {
     const channelName = fwdNewsletter.newsletterName || 'Saluran WhatsApp';
     const channelJid = fwdNewsletter.newsletterJid;
     console.log(`📢 [Saluran Terdeteksi dari Terusan] ${channelName} (${channelJid})`);
@@ -748,41 +756,82 @@ async function handleIncomingMessage(msg) {
 
   // 2. Cek apakah pesan berisi Tautan Saluran WhatsApp (misal: https://whatsapp.com/channel/xxx)
   const channelLinkMatch = trimmedText.match(/whatsapp\.com\/channel\/([a-zA-Z0-9_-]+)/i);
-  if (channelLinkMatch && !trimmedText.startsWith(prefix)) {
+  if (!fromMe && channelLinkMatch) {
     const inviteCode = channelLinkMatch[1];
-    try {
-      console.log(`🔍 [Cek Tautan Saluran] Memeriksa link dengan kode: ${inviteCode}`);
-      const meta = await sock.newsletterMetadata('INVITE', inviteCode);
-      if (meta && meta.id) {
-        console.log(`📢 [Saluran Ditemukan dari Link] ${meta.name} (${meta.id})`);
-        await sock.sendMessage(remoteJid, {
-          text: `📢 *Ditemukan Saluran WhatsApp dari Tautan!*\n\n• Nama Saluran: *${meta.name || 'Saluran'}*\n• JID Saluran: \`${meta.id}\`\n• Jumlah Pengikut: *${meta.subscribers || 0}*\n\nUntuk mendaftarkannya sebagai target kirim otomatis, ketik:\n*${prefix}addtarget ${meta.id}*`
-        }, { quoted: msg });
-        return;
+    const isExplicitCmd = trimmedText.startsWith(prefix);
+    const hasAddIntent = qLower.includes('add') || qLower.includes('tambah') || qLower.includes('target') || qLower.includes('nargetin') || qLower.includes('daftar') || qLower.includes('simpan') || remoteJid.endsWith('@s.whatsapp.net');
+
+    if (!isExplicitCmd && hasAddIntent) {
+      try {
+        console.log(`🔍 [Auto Add Link Saluran] Memproses link saluran: ${inviteCode}`);
+        const meta = await sock.newsletterMetadata('INVITE', inviteCode);
+        if (meta && meta.id) {
+          if (!config.targetJids) config.targetJids = [];
+          if (!config.targetJids.includes(meta.id)) {
+            config.targetJids.push(meta.id);
+            saveConfig(config);
+            await sock.sendMessage(remoteJid, {
+              text: `✅ *Berhasil Mendaftarkan Saluran Baru!*\n\n• Nama Saluran: *${meta.name || 'Saluran'}*\n• JID Saluran: \`${meta.id}\`\n• Pengikut: *${meta.subscribers || 0}*\n\nTotal target siaran sekarang: ${config.targetJids.length}`
+            }, { quoted: msg });
+          } else {
+            await sock.sendMessage(remoteJid, {
+              text: `ℹ️ Saluran *${meta.name || 'Saluran'}* (\`${meta.id}\`) sudah terdaftar sebelumnya di target siaran.`
+            }, { quoted: msg });
+          }
+          return;
+        }
+      } catch (err) {
+        console.log(`⚠️ Gagal memproses link saluran otomatis: ${err.message}`);
       }
-    } catch (err) {
-      console.log(`⚠️ Gagal mengambil info link saluran: ${err.message}`);
     }
   }
 
   // 3. Cek apakah pesan berisi Tautan Undangan Grup WhatsApp (misal: https://chat.whatsapp.com/xxx)
   const groupLinkMatch = trimmedText.match(/chat\.whatsapp\.com\/([a-zA-Z0-9_-]+)/i);
-  if (groupLinkMatch && !trimmedText.startsWith(prefix)) {
+  if (!fromMe && groupLinkMatch) {
     const inviteCode = groupLinkMatch[1];
-    try {
-      console.log(`🔍 [Cek Tautan Grup] Memeriksa invite link grup: ${inviteCode}`);
-      const groupInfo = await sock.groupGetInviteInfo(inviteCode);
-      if (groupInfo && groupInfo.id) {
-        const rawId = groupInfo.id;
-        const groupJid = rawId.endsWith('@g.us') ? rawId : `${rawId}@g.us`;
-        console.log(`👥 [Grup Ditemukan dari Link] ${groupInfo.subject} (${groupJid})`);
+    const isExplicitCmd = trimmedText.startsWith(prefix);
+    const hasAddIntent = qLower.includes('add') || qLower.includes('tambah') || qLower.includes('target') || qLower.includes('nargetin') || qLower.includes('daftar') || qLower.includes('simpan') || qLower.includes('gabung') || qLower.includes('join') || remoteJid.endsWith('@s.whatsapp.net');
+
+    if (!isExplicitCmd && hasAddIntent) {
+      try {
+        console.log(`🔍 [Auto Add Link Grup] Memproses invite link: ${inviteCode}`);
+        const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+        if (groupInfo && groupInfo.id) {
+          let joinedStatus = 'ℹ️ Bot sudah berada di dalam grup ini';
+          try {
+            await sock.groupAcceptInvite(inviteCode);
+            joinedStatus = '🟢 Bot berhasil bergabung ke grup!';
+          } catch (eJoin) {
+            if (eJoin.message && !eJoin.message.includes('already in')) {
+              console.log(`ℹ️ [Group Join Notice]: ${eJoin.message}`);
+            }
+          }
+
+          const rawId = groupInfo.id;
+          const groupJid = rawId.endsWith('@g.us') ? rawId : `${rawId}@g.us`;
+
+          if (!config.targetJids) config.targetJids = [];
+          if (!config.targetJids.includes(groupJid)) {
+            config.targetJids.push(groupJid);
+            saveConfig(config);
+            await sock.sendMessage(remoteJid, {
+              text: `✅ *Berhasil Mendaftarkan Grup Baru!*\n\n• Nama Grup: *${groupInfo.subject || 'Grup WhatsApp'}*\n• JID Grup: \`${groupJid}\`\n• Anggota: *${groupInfo.size || groupInfo.participants?.length || '?'}*\n• Status: ${joinedStatus}\n\nTotal target siaran sekarang: ${config.targetJids.length}`
+            }, { quoted: msg });
+          } else {
+            await sock.sendMessage(remoteJid, {
+              text: `ℹ️ Grup *${groupInfo.subject || 'Grup'}* (\`${groupJid}\`) sudah terdaftar sebelumnya di target siaran.\n\nStatus: ${joinedStatus}`
+            }, { quoted: msg });
+          }
+          return;
+        }
+      } catch (err) {
+        console.log(`⚠️ Gagal memproses link grup otomatis: ${err.message}`);
         await sock.sendMessage(remoteJid, {
-          text: `👥 *Ditemukan Grup WhatsApp dari Tautan!*\n\n• Nama Grup: *${groupInfo.subject || 'Grup'}*\n• JID Grup: \`${groupJid}\`\n• Anggota: *${groupInfo.size || groupInfo.participants?.length || '?'}*\n\nUntuk mendaftarkannya sebagai target siaran (dan bot otomatis join), ketik:\n*${prefix}addlink https://chat.whatsapp.com/${inviteCode}*`
+          text: `❌ Gagal memproses tautan grup: ${err.message}\n_Pastikan tautan undangan valid dan bot belum diblokir oleh admin grup._`
         }, { quoted: msg });
         return;
       }
-    } catch (err) {
-      console.log(`⚠️ Gagal mengambil info link grup: ${err.message}`);
     }
   }
 
@@ -967,7 +1016,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -1005,6 +1054,10 @@ async function handleIncomingMessage(msg) {
   // Toleransi typo / alias otomatis
   if (command === 'list' && (args[1] || '').toLowerCase() === 'dosen') {
     command = 'listdosen';
+  } else if (command === 'add' && ((args[1] || '').toLowerCase() === 'link' || (args[1] || '').toLowerCase() === 'target')) {
+    command = 'addtarget';
+  } else if (command === 'addlink') {
+    command = 'addtarget';
   } else if (command === 'pollall' || ((command === 'poll' || command === 'polling' || command === 'dosen') && (args[1] || '').toLowerCase() === 'all' && !query.includes('|') && args.length === 2)) {
     command = 'all';
   } else if (command === 'jadwala') {
@@ -2149,7 +2202,9 @@ ${messageBody}
 
     case 'addtarget':
     case 'addlink': {
-      let input = (args[1] || '').trim();
+      // Ambil input: cari URL dari seluruh teks query terlebih dahulu jika ada, atau ambil dari argumen JID
+      const urlInQuery = query.match(/https?:\/\/[^\s]+/i);
+      let input = urlInQuery ? urlInQuery[0] : (args.slice(1).find(a => a.includes('@')) || args[1] || '').trim();
 
       // Jika perintah diketik tanpa argumen di dalam grup atau saluran, daftarkan obrolan saat ini secara otomatis!
       if (!input || input === 'sini' || input === 'here') {
