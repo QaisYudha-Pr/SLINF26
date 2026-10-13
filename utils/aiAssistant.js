@@ -88,9 +88,10 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   const config = loadConfig();
 
   const apiKey = customApiKey || config.geminiApiKey || process.env.GEMINI_API_KEY;
+  const groqApiKey = config.groqApiKey || process.env.GROQ_API_KEY;
 
-  if (!apiKey) {
-    return '❌ Fitur AI belum dapat digunakan karena Gemini API Key belum disetel di config.json.';
+  if (!apiKey && !groqApiKey) {
+    return '❌ Fitur AI belum dapat digunakan karena API Key belum disetel di config.json.\n\n_Ketik dari chat WA:_\n*!setconfig groqApiKey <kunci_groq>*';
   }
 
   const dt = getIndonesianDateTime();
@@ -486,23 +487,99 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
     }
   });
 
-  for (const model of models) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`;
+  let replyText = null;
 
-      // Timeout 12 detik: jika 1 model lelet/hang, langsung fallback ke model berikutnya
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payloadStr,
-        signal: AbortSignal.timeout(12000)
-      });
+  // ⚡ TIER 1: GROQ CLOUD LPU ENGINE (Ultra Cepat ~1.5s, 0% CPU Laptop/Termux, Bebas Limit 503)
+  const preferredGroqModel = config.groqModel || 'qwen/qwen3.8-27b';
+  const groqModels = [...new Set([preferredGroqModel, 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'allam-2-7b'])];
 
-      if (res.status === 200) {
-        const data = await res.json();
-        const candidateParts = data.candidates?.[0]?.content?.parts || [];
-        let replyText = candidateParts.map(p => p.text).filter(Boolean).join('\n\n').trim();
-        if (!replyText) continue;
+  if (groqApiKey && !mediaFile) {
+    const groqMessages = [
+      { role: 'system', content: systemInstruction }
+    ];
+    if (session.turns && session.turns.length > 0) {
+      for (const turn of session.turns) {
+        groqMessages.push({
+          role: turn.role === 'model' ? 'assistant' : turn.role,
+          content: turn.text
+        });
+      }
+    }
+    groqMessages.push({
+      role: 'user',
+      content: userQuestion || 'Halo Alters!'
+    });
+
+    for (const gModel of groqModels) {
+      try {
+        console.log(`⚡ [AI Groq Engine] Mengirim permintaan ke Groq (${gModel})...`);
+        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: gModel,
+            messages: groqMessages,
+            temperature: 0.55,
+            max_tokens: 3072
+          }),
+          signal: AbortSignal.timeout(12000)
+        });
+
+        if (groqRes.status === 200) {
+          const gData = await groqRes.json();
+          const content = gData.choices?.[0]?.message?.content;
+          if (content && content.trim()) {
+            replyText = content.trim();
+            console.log(`⚡ [AI Groq Engine] Respon dari ${gModel} sukses (${replyText.length} karakter)`);
+            break;
+          }
+        } else {
+          const gErr = await groqRes.text().catch(() => '');
+          console.warn(`⚠️ [Groq ${gModel} HTTP ${groqRes.status}]:`, gErr.slice(0, 100));
+        }
+      } catch (eGroq) {
+        console.warn(`⚠️ [Groq ${gModel} Kendala: ${eGroq.message}]`);
+      }
+    }
+  }
+
+  // 🌐 TIER 2: GOOGLE GEMINI AI (Multimodal Image/PDF & Fallback jika Groq offline/kosong)
+  if (!replyText && apiKey) {
+    for (const model of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`;
+
+        // Timeout 12 detik: jika 1 model lelet/hang, langsung fallback ke model berikutnya
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payloadStr,
+          signal: AbortSignal.timeout(12000)
+        });
+
+        if (res.status === 200) {
+          const data = await res.json();
+          const candidateParts = data.candidates?.[0]?.content?.parts || [];
+          const candidateText = candidateParts.map(p => p.text).filter(Boolean).join('\n\n').trim();
+          if (candidateText) {
+            replyText = candidateText;
+            console.log(`🌐 [Gemini Cloud] Respon dari ${model} sukses (${replyText.length} karakter)`);
+            break;
+          }
+        } else {
+          const errText = await res.text();
+          console.warn(`⚠️ [Gemini ${model} HTTP ${res.status}]:`, errText.slice(0, 150));
+        }
+      } catch (err) {
+        console.warn(`⚠️ [Gemini ${model} error]:`, err.message);
+      }
+    }
+  }
+
+  if (replyText) {
 
         // Periksa apakah AI memicu satu atau lebih aksi sistem (bisa batch aksi seperti menambah banyak tugas)
         let actionMatches = [...replyText.matchAll(/\[\[ACTION:([A-Z_]+):([\s\S]*?)\]\]/g)];
@@ -1062,13 +1139,6 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
         } catch (eMem) {}
 
         return replyText;
-      } else {
-        const errText = await res.text();
-        console.warn(`⚠️ [Gemini ${model} HTTP ${res.status}]:`, errText.slice(0, 150));
-      }
-    } catch (err) {
-      console.warn(`⚠️ [Gemini ${model} error]:`, err.message);
-    }
   }
 
   // 🚨 Emergency Smart Fallback Handler jika seluruh model Google AI sedang limit (429 / 503)

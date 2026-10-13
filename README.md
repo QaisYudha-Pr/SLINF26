@@ -2,16 +2,19 @@
 
 [![Node.js Version](https://img.shields.io/badge/Node.js-v20%2B-green.svg)](https://nodejs.org/)
 [![Baileys Engine](https://img.shields.io/badge/Baileys-WhatsApp%20Web%20API-blue.svg)](https://github.com/WhiskeySockets/Baileys)
-[![Gemini Engine](https://img.shields.io/badge/Google%20Gemini-3.5--Flash--Lite-orange.svg)](https://aistudio.google.com/)
+[![AI Engine](https://img.shields.io/badge/AI%20Engine-Groq%20LPU%20%2B%20Gemini-orange.svg)](https://groq.com/)
 [![Database](https://img.shields.io/badge/Database-Supabase%20Cloud%20PostgreSQL-3ECF8E.svg)](https://supabase.com/)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)]()
 
-**Alters** adalah asisten AI akademik dan bot manajemen saluran/grup WhatsApp modern berbasis **Node.js** dan **@whiskeysockets/baileys**. Ditenagai oleh **Google Gemini 3.5 Flash-Lite**, bot ini dirancang untuk mendampingi mahasiswa dan pengurus kelas dalam mengelola perkuliahan: mulai dari tanya jawab materi cerdas, pencatatan tugas berbasis bahasa alami, pengingat deadline otomatis (DM/Grup/Saluran), polling presensi dosen, OCR jadwal kuliah, hingga siaran harian otomatis.
+> 📘 **Panduan Penggunaan Cepat & Termux**: Silakan baca panduan lengkap di [PANDUAN_BOT.md](file:///c:/WiraSBY/coding-bot-wa/PANDUAN_BOT.md).
+
+**Alters** adalah asisten AI akademik dan bot manajemen saluran/grup WhatsApp modern berbasis **Node.js** dan **@whiskeysockets/baileys**. Ditenagai oleh **Groq Cloud LPU (Ultra Fast ~1.5s, 0% CPU Load)** dengan cadangan **Google Gemini AI**, bot ini dirancang untuk mendampingi mahasiswa dan pengurus kelas dalam mengelola perkuliahan: mulai dari tanya jawab materi cerdas, pencatatan tugas berbasis bahasa alami, database mahasiswa Supabase, pengingat deadline otomatis (DM/Grup/Saluran), polling presensi dosen, OCR jadwal kuliah, hingga siaran harian otomatis.
 
 ---
 
 ## 📑 Daftar Isi
-1. [Fitur Utama](#-fitur-utama)
+1. [Panduan Penggunaan Lengkap (PANDUAN_BOT.md)](file:///c:/WiraSBY/coding-bot-wa/PANDUAN_BOT.md)
+2. [Fitur Utama](#-fitur-utama)
 2. [Panduan Cepat untuk Kolaborator (Quickstart)](#-panduan-cepat-untuk-kolaborator-quickstart)
 3. [Keamanan & Variabel Lingkungan (Security Guide)](#-keamanan--variabel-lingkungan-security-guide)
 4. [Struktur Konfigurasi (`config.json`)](#-struktur-konfigurasi-configjson)

@@ -1053,33 +1053,62 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'importmhs', 'batchmhs', 'pilihan', 'tombol', 'menuinteraktif', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'importmhs', 'batchmhs', 'pilihan', 'tombol', 'menuinteraktif', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat', 'setconfig', 'setgroq', 'setgemini'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
     cleanCommandText = trimmedText.slice(usedPrefix.length).trim();
   } else {
-    const firstWord = trimmedText.split(/\s+/)[0].toLowerCase();
-    if (commonCommands.includes(firstWord)) {
-      cleanCommandText = trimmedText;
+    // ⚡ Fitur Quick-Reply Angka 1-7 jika reply pesan menu bot langsung
+    if (quotedText && quotedText.toLowerCase().includes('menu') && /^[1-7]$/.test(trimmedText)) {
+      const numChoice = trimmedText.trim();
+      if (numChoice === '1') cleanCommandText = 'today';
+      else if (numChoice === '2') cleanCommandText = 'tugas';
+      else if (numChoice === '3') cleanCommandText = 'mahasiswa';
+      else if (numChoice === '4') cleanCommandText = 'all';
+      else if (numChoice === '5') cleanCommandText = 'reminder';
+      else if (numChoice === '6') cleanCommandText = 'status';
+      else if (numChoice === '7') cleanCommandText = 'menu ai';
     } else {
-      // 🌟 ZERO-PREFIX NATURAL AI CHAT (Khusus DM Owner):
-      // Jika Owner chat santai tanpa awalan (misal: "hari ini ada tugas apa?", "besok kuliah jam berapa"),
-      // otomatis serahkan ke AI Copilot tanpa perlu mengetik ! atau /ai!
-      if (isPrivateChat && userIsOwner) {
-        const mediaFile = await extractMediaFromMessage(msg, sock);
-        console.log(`🤖 [AI Copilot DM] Pertanyaan Owner (${sender}): "${trimmedText}"${mediaFile ? ` [Media: ${mediaFile.mimeType}]` : ''}`);
-        await react('🤔');
-        try {
-          const answer = await askGeminiAI(trimmedText, userIsOwner, mediaFile, null, sock, remoteJid, sender);
-          await reply(answer);
-          await react('💡');
-        } catch (e) {
-          await reply(`❌ Kendala AI: ${e.message}`);
+      const firstWord = trimmedText.split(/\s+/)[0].toLowerCase();
+      if (commonCommands.includes(firstWord)) {
+        cleanCommandText = trimmedText;
+      } else {
+        // 🌟 ZERO-PREFIX NATURAL AI CHAT (Khusus DM Owner):
+        // Jika Owner chat santai tanpa awalan (misal: "hari ini ada tugas apa?", "besok kuliah jam berapa"),
+        // otomatis serahkan ke AI Copilot tanpa perlu mengetik ! atau /ai!
+        if (isPrivateChat && userIsOwner) {
+          // 🔑 Auto-Detect jika Owner langsung paste API Key Groq atau Gemini di DM
+          if (trimmedText.startsWith('gsk_')) {
+            const cfg = loadConfig();
+            cfg.groqApiKey = trimmedText.trim();
+            cfg.aiProvider = 'groq';
+            saveConfig(cfg);
+            await reply(`🔑 *[Groq API Key Berhasil Disimpan]*\nKunci Groq kamu otomatis tersimpan di \`config.json\`!\nMesin AI utama bot sekarang beralih ke Groq LPU (Ultra Fast & Bebas Limit 503). 🚀`);
+            return;
+          }
+          if (trimmedText.startsWith('AIzaSy')) {
+            const cfg = loadConfig();
+            cfg.geminiApiKey = trimmedText.trim();
+            saveConfig(cfg);
+            await reply(`🔑 *[Gemini API Key Berhasil Disimpan]*\nKunci Google Gemini berhasil disimpan ke \`config.json\`!`);
+            return;
+          }
+
+          const mediaFile = await extractMediaFromMessage(msg, sock);
+          console.log(`🤖 [AI Copilot DM] Pertanyaan Owner (${sender}): "${trimmedText}"${mediaFile ? ` [Media: ${mediaFile.mimeType}]` : ''}`);
+          await react('🤔');
+          try {
+            const answer = await askGeminiAI(trimmedText, userIsOwner, mediaFile, null, sock, remoteJid, sender);
+            await reply(answer);
+            await react('💡');
+          } catch (e) {
+            await reply(`❌ Kendala AI: ${e.message}`);
+          }
+          return;
         }
-        return;
+        return; // Abaikan jika bukan perintah dan bukan DM owner
       }
-      return; // Abaikan jika bukan perintah dan bukan DM owner
     }
   }
 
@@ -1119,6 +1148,7 @@ async function handleIncomingMessage(msg) {
     'setdosen', 'additem', 'delitem',
     'tambahkan', 'addowner', 'hapusnomor', 'delowner', 'listowner',
     'importmhs', 'batchmhs',
+    'setconfig', 'setgroq', 'setgemini',
     'repair'
   ];
 
@@ -1344,7 +1374,7 @@ Semua jawaban AI dan perintah dikirim instan tanpa jeda delay buatan!`;
       let dashboardText = 
 `╭───「 🎓 *ALTERS BOT — MENU UTAMA* 」
 │ 📅 *${dt.fullFormatted}*
-│ 🤖 Bot: 🟢 Aktif | AI: Alters (Gemini 3.8 Flash)
+│ 🤖 Bot: 🟢 Aktif | AI Engine: Groq LPU + Gemini
 ╰──────────────────────────
 
 📚 *KULIAH HARI INI (${dt.dayName}):*
@@ -1352,7 +1382,17 @@ ${schedSummary}
 📝 *TUGAS:* ${pendingTasksText}
 
 ━━━━━━━━━━━━━━━━━━━━
-📌 *DAFTAR PERINTAH UTAMA:*
+⚡ *PILIHAN CEPAT (Balas pesan ini dengan angka):*
+[1] ➔ 📚 Jadwal Kuliah Hari Ini
+[2] ➔ 📝 Daftar Tugas Aktif (Cloud)
+[3] ➔ 🎓 Data Mahasiswa Supabase
+[4] ➔ 📊 Polling Kehadiran Dosen
+[5] ➔ ⏰ Cek Pengingat Aktif
+[6] ➔ ℹ️ Status Bot & Host Server
+[7] ➔ 🤖 Panduan Tanya Alters AI
+
+🔘 _Suka versi tombol klik? Ketik:_ *${prefix}tombol*
+━━━━━━━━━━━━━━━━━━━━
 
 📚 *JADWAL KULIAH*
 • *${prefix}jadwal a* / *b* / *i* ➔ Jadwal kuliah hari ini
@@ -1371,6 +1411,11 @@ ${schedSummary}
 • *${prefix}tugas done <id>* ➔ Tandai tugas selesai
 • *${prefix}reminder* ➔ Cek & atur pengingat tugas harian (19:00)
 
+🎓 *DATABASE MAHASISWA*
+• *${prefix}mhs* ➔ Cek data mahasiswa terdaftar
+• *${prefix}tambahmhs <nama> | <nim>* ➔ Tambah mahasiswa
+• *${prefix}importmhs <data>* ➔ Impor massal (10 - 100+ data sekaligus)
+
 📢 *SIARAN & BROADCAST*
 • *${prefix}today* ➔ Pratinjau siaran hari ini
 • *${prefix}send [target]* ➔ Kirim agenda ke target pilihan
@@ -1380,9 +1425,11 @@ ${schedSummary}
 🤖 *TANYA ALTERS (AI CO-PILOT)*
 • *${prefix}ai <pertanyaan>* atau tag *@Alters* di grup
 • *${prefix}reset* ➔ Bersihkan memori obrolan
-• _Contoh:_ *${prefix}ai cari rangkuman materi Basis Data 1NF-3NF*
 • _Contoh:_ *${prefix}ai catat tugas Basdat deadline jumat*
+• _Contoh:_ *${prefix}ai targetin grup ini*
 ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
+• *${prefix}setconfig <kunci> <nilai>* ➔ Atur config langsung dari WA
+• *${prefix}setgroq <kunci>* / *${prefix}setgemini <kunci>* ➔ Update API Key
 • *${prefix}gantijam* / *${prefix}gantiruang* / *${prefix}batal* ➔ Ubah jadwal cepat
 • *${prefix}reminder on/off/set* ➔ Saklar & atur jam pengingat
 • *${prefix}addtarget <id>* / *${prefix}deltarget <id>* ➔ Kelola target
@@ -2817,6 +2864,85 @@ Halo! Namaku *Alters*, asisten AI akademik & co-pilot cerdas untuk komunitas mah
 
 ✨ Seluruh modul dan struktur file bot dalam kondisi prima!`;
       await reply(report);
+      break;
+    }
+
+    case 'setconfig': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Pemilik (Owner) bot.');
+        return;
+      }
+      const keyToSet = (args[1] || '').trim();
+      const valToSet = query.slice(keyToSet.length).trim();
+      if (!keyToSet || !valToSet) {
+        await reply(`⚙️ *[PENGATURAN KONFIGURASI DARI WHATSAPP]*\n\nCara pakai:\n*${prefix}setconfig <kunci> <nilai>*\n\nContoh:\n• *${prefix}setconfig groqApiKey gsk_xxx*\n• *${prefix}setconfig geminiApiKey AIzaxxx*\n• *${prefix}setconfig groqModel qwen/qwen3.8-27b*\n• *${prefix}setconfig prefix !*\n\n_Atau cukup ketik:_\n*${prefix}setgroq <kunci_groq>*\n*${prefix}setgemini <kunci_gemini>*`);
+        return;
+      }
+      const cfg = loadConfig();
+      if (valToSet.toLowerCase() === 'true') cfg[keyToSet] = true;
+      else if (valToSet.toLowerCase() === 'false') cfg[keyToSet] = false;
+      else if (/^\d+$/.test(valToSet)) cfg[keyToSet] = parseInt(valToSet, 10);
+      else cfg[keyToSet] = valToSet;
+      saveConfig(cfg);
+      const maskedVal = valToSet.length > 10 ? `${valToSet.slice(0, 6)}...${valToSet.slice(-4)}` : valToSet;
+      await reply(`✅ *[Konfigurasi Diperbarui Langsung dari WA]*\n\n• Kunci: \`${keyToSet}\`\n• Nilai: \`${maskedVal}\`\n\nTersimpan permanen di config.json! 🚀`);
+      break;
+    }
+
+    case 'setgroq': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Pemilik (Owner) bot.');
+        return;
+      }
+      const newGroqKey = query.trim();
+      if (!newGroqKey) {
+        await reply(`❌ Harap sertakan kunci Groq API. Contoh:\n*${prefix}setgroq gsk_xxxx*`);
+        return;
+      }
+      const cfg = loadConfig();
+      cfg.groqApiKey = newGroqKey;
+      cfg.aiProvider = 'groq';
+      saveConfig(cfg);
+      await reply(`⚡ *[Groq API Key Berhasil Disimpan]*\nKunci Groq kamu berhasil diperbarui di \`config.json\`!\nMesin AI utama sekarang aktif menggunakan Groq LPU (Ultra Fast & Bebas Limit 503). 🚀`);
+      break;
+    }
+
+    case 'setgemini': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Pemilik (Owner) bot.');
+        return;
+      }
+      const newGeminiKey = query.trim();
+      if (!newGeminiKey) {
+        await reply(`❌ Harap sertakan kunci Gemini API. Contoh:\n*${prefix}setgemini AIzaxxxx*`);
+        return;
+      }
+      const cfg = loadConfig();
+      cfg.geminiApiKey = newGeminiKey;
+      saveConfig(cfg);
+      await reply(`🌐 *[Gemini API Key Berhasil Disimpan]*\nKunci Google Gemini berhasil diperbarui di \`config.json\`!`);
+      break;
+    }
+
+    case 'tombol':
+    case 'pilihan':
+    case 'menuinteraktif': {
+      const dt = getIndonesianDateTime();
+      const pollTitle = `🤖 MENU UTAMA ALTERS BOT (${dt.dayName})`;
+      const pollOptions = [
+        '📚 1. Jadwal Kuliah Hari Ini',
+        '📝 2. Daftar Tugas Aktif',
+        '🎓 3. Cek Data Mahasiswa',
+        '📊 4. Polling Kehadiran Dosen',
+        '⏰ 5. Cek Pengingat Aktif',
+        'ℹ️ 6. Status Bot & Sistem',
+        '❓ 7. Bantuan Tanya AI'
+      ];
+      try {
+        await sendNativePoll(sock, remoteJid, pollTitle, pollOptions, 1);
+      } catch (ePoll) {
+        await reply(`❌ Gagal menampilkan tombol: ${ePoll.message}`);
+      }
       break;
     }
 
