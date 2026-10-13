@@ -1728,42 +1728,43 @@ _[tempel/paste teks jadwal kamu di sini]_
         return;
       }
 
-      // 2. !tugas done <id> / !tugas selesai <id>
-      if (subCommand === 'done' || subCommand === 'selesai') {
-        const taskId = args[2];
-        if (!taskId) {
-          await reply(`❌ Masukkan ID tugas. Contoh: *${prefix}tugas done 1*`);
+      // 2. !tugas done <id / nama matkul>
+      if (subCommand === 'done' || subCommand === 'selesai' || subCommand === 'kelar' || subCommand === 'beres') {
+        const targetIdentifier = args.slice(2).join(' ') || args[2];
+        if (!targetIdentifier) {
+          await reply(`❌ Masukkan ID atau nama mata kuliah tugas. Contoh:\n• *${prefix}tugas done 1*\n• *${prefix}tugas done basdat*\n_Atau cukup bilang ke AI:_ *${prefix}ai tugas basdat udah kelar*`);
           return;
         }
         await react('⏳');
-        const res = await markTaskDone(taskId);
+        const res = await markTaskDone(targetIdentifier);
         if (res.success) {
           await react('🎉');
-          await reply(`🎉 *SELAMAT!* Tugas ID *${taskId}* (*${res.task?.judul || 'Tugas'}*) telah ditandai *SELESAI*!`);
+          const t = res.task || {};
+          await reply(`🎉 *SELAMAT!* Tugas *${t.matkul || ''}* - "*${t.judul || 'Tugas'}*" (ID: ${t.id}) telah ditandai *SELESAI*! Beban kuliah berkurang satu! 🚀`);
         } else {
-          await reply(`❌ ${res.message || 'Gagal menandai tugas.'}`);
+          await reply(`❌ ${res.message || 'Tugas tidak ditemukan.'}`);
         }
         return;
       }
 
-      // 3. !tugas hapus <id> / !tugas del <id>
+      // 3. !tugas hapus <id / nama matkul>
       if (subCommand === 'hapus' || subCommand === 'del' || subCommand === 'delete') {
         if (!userIsOwner) {
           await reply('⛔ Hanya Admin / Owner yang dapat menghapus data tugas.');
           return;
         }
-        const taskId = args[2];
-        if (!taskId) {
-          await reply(`❌ Masukkan ID tugas. Contoh: *${prefix}tugas hapus 1*`);
+        const targetIdentifier = args.slice(2).join(' ') || args[2];
+        if (!targetIdentifier) {
+          await reply(`❌ Masukkan ID atau nama mata kuliah tugas. Contoh: *${prefix}tugas hapus basdat*`);
           return;
         }
         await react('⏳');
-        const res = await deleteTask(taskId);
+        const res = await deleteTask(targetIdentifier);
         if (res.success) {
           await react('🗑️');
-          await reply(`🗑️ Tugas ID *${taskId}* berhasil dihapus dari database.`);
+          await reply(`🗑️ Tugas *${targetIdentifier}* berhasil dihapus dari database.`);
         } else {
-          await reply('❌ Gagal menghapus tugas.');
+          await reply(`❌ ${res.message || 'Gagal menghapus tugas.'}`);
         }
         return;
       }

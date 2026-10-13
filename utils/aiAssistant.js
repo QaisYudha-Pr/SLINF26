@@ -261,10 +261,17 @@ atau jika menyuruh mematikan:
 [[ACTION:ADD_TASK:{"kelas":"A","matkul":"Basis Data","judul":"Bikin ERD","deadline":"Jumat jam 23:59"}]]
 - Ubah / update tugas yang sudah ada (contoh: "ubah deadline tugas ID 1 jadi besok jam 23.59", "ganti batas tugas 2 jadi jumat", "ubah judul tugas 1 jadi Buat DFD"):
 [[ACTION:UPDATE_TASK:{"id":1,"deadline":"Besok jam 23:59"}]]
-- Tandai tugas selesai (contoh: "tugas ID 2 udah kelar"):
-[[ACTION:DONE_TASK:{"id":2}]]
-- Menghapus tugas (contoh: "hapus tugas ID 2"):
-[[ACTION:DELETE_TASK:{"id":2}]]
+- TANDAI TUGAS SELESAI / DONE (KELOLA OTOMATIS OLEH ALTERS TANPA WAJIB ID):
+  Pengguna TIDAK HARUS menghafal atau menyebutkan nomor ID tugas!
+  Jika pengguna bilang kalimat seperti:
+  "tugas basdat udah kelar", "tugas dfa udah beres", "tugas erd selesai", "aku udah ngerjain tugas pemweb", atau "tugas makalah done":
+  1. Lihat daftar tugas aktif di atas (${tasksSummary}).
+  2. Cari tugas yang cocok (berdasarkan matkul atau judul yang dimaksud).
+  3. Ambil ID tugas tersebut (atau gunakan nama matkul/judul sebagai "query"):
+     [[ACTION:DONE_TASK:{"id":<id_tugas>}]] atau [[ACTION:DONE_TASK:{"query":"Basis Data"}]]
+  4. Beri respons ucapan selamat santai dan apresiasi bahwa beban kuliahnya sudah berkurang satu!
+- Menghapus tugas (bisa pakai ID atau nama matkul):
+[[ACTION:DELETE_TASK:{"id":2}]] atau [[ACTION:DELETE_TASK:{"query":"Basis Data"}]]
 - Minta tampilkan daftar tugas lengkap:
 [[ACTION:GET_TASKS:{"kelas":"A"}]]
 
@@ -323,6 +330,9 @@ Parameter:
 • Permintaan: "ubah deadline tugas 1 jadi besok jam 23.59" atau "/ai ubah batas tugas 1 jadi jumat malam"
   Tindakan: Ubah deadline tugas dengan ID 1.
   Aksi: [[ACTION:UPDATE_TASK:{"id":1,"deadline":"Besok jam 23:59"}]]
+• Permintaan: "tugas basdat udah kelar" atau "/ai tugas dfa udah beres" atau "aku udah ngerjain tugas erd"
+  Tindakan: Pengguna menyelesaikan tugas tanpa menyebut ID. Alters otomatis mencocokkan tugas aktif.
+  Aksi: [[ACTION:DONE_TASK:{"query":"Basis Data"}]]
 • Permintaan: "ingatkan besok jam 7 pagi kuis dfa ke gw aja" atau "/ai ingatkan jam 8 malem kuis dfa pc ke gw"
   Tindakan: Buat pengingat kustom khusus chat pribadi / DM pengirim.
   Aksi: [[ACTION:ADD_REMINDER:{"text":"Kuis DFA","time":"07:00","day":"besok","target":"gw"}]]
@@ -508,15 +518,24 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
               });
               return `${cleanReply}\n\n📝 *[Tugas Tersimpan di Cloud Supabase]*\n▫️ *ID:* ${resTask.task.id}\n▫️ *Matkul:* ${resTask.task.matkul}\n📋 *Tugas:* ${resTask.task.judul}\n⏰ *Batas:* ${resTask.task.deadline_text}`;
             } else if (actionType === 'DONE_TASK') {
-              const resDone = await markTaskDone(actionData.id);
+              const targetIdentifier = actionData.id || actionData.query || actionData.matkul || actionData.judul;
+              const resDone = await markTaskDone(targetIdentifier);
               if (resDone.success) {
-                return `${cleanReply}\n\n🎉 *[Tugas Selesai]* Tugas ID *${actionData.id}* telah ditandai SELESAI di Supabase!`;
+                const t = resDone.task || {};
+                const matkulLabel = t.matkul ? `*${t.matkul}*` : '';
+                const judulLabel = t.judul ? `"${t.judul}"` : 'Tugas';
+                return `${cleanReply}\n\n🎉 *[Tugas Selesai]* ${matkulLabel} - ${judulLabel} (ID: ${t.id || targetIdentifier}) telah ditandai SELESAI di Supabase! Mantap, berkurang satu beban kuliah! 🚀`;
               } else {
-                return `${cleanReply}\n\n⚠️ ${resDone.message || 'Gagal menandai tugas.'}`;
+                return `${cleanReply}\n\n⚠️ ${resDone.message || 'Gagal menandai tugas selesai.'}`;
               }
             } else if (actionType === 'DELETE_TASK') {
-              await deleteTask(actionData.id);
-              return `${cleanReply}\n\n🗑️ *[Tugas Dihapus]* Tugas ID *${actionData.id}* telah dihapus dari database Supabase.`;
+              const targetIdentifier = actionData.id || actionData.query || actionData.matkul || actionData.judul;
+              const resDel = await deleteTask(targetIdentifier);
+              if (resDel.success) {
+                return `${cleanReply}\n\n🗑️ *[Tugas Dihapus]* Tugas *${targetIdentifier}* telah dihapus dari database Supabase.`;
+              } else {
+                return `${cleanReply}\n\n⚠️ ${resDel.message || 'Gagal menghapus tugas.'}`;
+              }
             } else if (actionType === 'GET_TASKS') {
               const listFormatted = await formatTaskList(actionData.kelas || 'A');
               return `${cleanReply}\n\n${listFormatted}`;

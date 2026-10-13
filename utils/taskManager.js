@@ -151,11 +151,41 @@ async function addTask({ kelas = 'A', matkul, judul, deadline_text = '-', create
 }
 
 /**
+ * Mencari ID tugas dari angka atau teks (nama matkul / judul)
+ */
+function resolveTaskId(identifier) {
+  if (typeof identifier === 'number') return identifier;
+  if (!identifier) return null;
+  const num = parseInt(identifier, 10);
+  if (!isNaN(num) && String(num) === String(identifier).trim()) return num;
+
+  if (typeof identifier === 'string') {
+    const q = identifier.toLowerCase().trim();
+    const current = getLocalTasks();
+    // Prioritas 1: cari tugas yang statusnya belum selesai (pending)
+    const pending = current.filter(t => t.status !== 'done');
+    const match = pending.find(t => 
+      (t.matkul && t.matkul.toLowerCase().includes(q)) || 
+      (t.judul && t.judul.toLowerCase().includes(q))
+    );
+    if (match) return match.id;
+
+    // Fallback ke semua tugas
+    const anyMatch = current.find(t => 
+      (t.matkul && t.matkul.toLowerCase().includes(q)) || 
+      (t.judul && t.judul.toLowerCase().includes(q))
+    );
+    if (anyMatch) return anyMatch.id;
+  }
+  return null;
+}
+
+/**
  * Menandai tugas selesai
  */
 async function markTaskDone(taskId) {
-  const tId = parseInt(taskId, 10);
-  if (isNaN(tId)) return { success: false, message: 'ID tugas tidak valid.' };
+  const tId = resolveTaskId(taskId);
+  if (!tId) return { success: false, message: 'Tugas tidak ditemukan. Sebutkan ID atau nama matkul tugas.' };
 
   try {
     const res = await fetchSupabase(`tasks?id=eq.${tId}`, {
@@ -192,8 +222,8 @@ async function markTaskDone(taskId) {
  * Memperbarui data tugas (misal deadline_text, judul, matkul)
  */
 async function updateTask(taskId, updates = {}) {
-  const tId = parseInt(taskId, 10);
-  if (isNaN(tId)) return { success: false, message: 'ID tugas tidak valid.' };
+  const tId = resolveTaskId(taskId);
+  if (!tId) return { success: false, message: 'Tugas tidak ditemukan. Sebutkan ID atau nama matkul tugas.' };
 
   try {
     const res = await fetchSupabase(`tasks?id=eq.${tId}`, {
@@ -229,8 +259,8 @@ async function updateTask(taskId, updates = {}) {
  * Menghapus tugas
  */
 async function deleteTask(taskId) {
-  const tId = parseInt(taskId, 10);
-  if (isNaN(tId)) return { success: false, message: 'ID tugas tidak valid.' };
+  const tId = resolveTaskId(taskId);
+  if (!tId) return { success: false, message: 'Tugas tidak ditemukan. Sebutkan ID atau nama matkul tugas.' };
 
   try {
     const res = await fetchSupabase(`tasks?id=eq.${tId}`, {
@@ -327,6 +357,7 @@ module.exports = {
   formatTaskList,
   checkDatabaseStatus,
   fetchSupabase,
-  getLecturers
+  getLecturers,
+  resolveTaskId
 };
 
