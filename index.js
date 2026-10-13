@@ -765,6 +765,27 @@ async function handleIncomingMessage(msg) {
     }
   }
 
+  // 3. Cek apakah pesan berisi Tautan Undangan Grup WhatsApp (misal: https://chat.whatsapp.com/xxx)
+  const groupLinkMatch = trimmedText.match(/chat\.whatsapp\.com\/([a-zA-Z0-9_-]+)/i);
+  if (groupLinkMatch && !trimmedText.startsWith(prefix)) {
+    const inviteCode = groupLinkMatch[1];
+    try {
+      console.log(`🔍 [Cek Tautan Grup] Memeriksa invite link grup: ${inviteCode}`);
+      const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+      if (groupInfo && groupInfo.id) {
+        const rawId = groupInfo.id;
+        const groupJid = rawId.endsWith('@g.us') ? rawId : `${rawId}@g.us`;
+        console.log(`👥 [Grup Ditemukan dari Link] ${groupInfo.subject} (${groupJid})`);
+        await sock.sendMessage(remoteJid, {
+          text: `👥 *Ditemukan Grup WhatsApp dari Tautan!*\n\n• Nama Grup: *${groupInfo.subject || 'Grup'}*\n• JID Grup: \`${groupJid}\`\n• Anggota: *${groupInfo.size || groupInfo.participants?.length || '?'}*\n\nUntuk mendaftarkannya sebagai target siaran (dan bot otomatis join), ketik:\n*${prefix}addlink https://chat.whatsapp.com/${inviteCode}*`
+        }, { quoted: msg });
+        return;
+      }
+    } catch (err) {
+      console.log(`⚠️ Gagal mengambil info link grup: ${err.message}`);
+    }
+  }
+
   const reply = async (text) => {
     try {
       if (!remoteJid.endsWith('@newsletter')) {
@@ -2113,10 +2134,10 @@ ${messageBody}
     case 'addlink': {
       const input = (args[1] || '').trim();
 
-      // Jika input berupa tautan Saluran (whatsapp.com/channel/...)
-      const match = input.match(/whatsapp\.com\/channel\/([a-zA-Z0-9_-]+)/i);
-      if (match) {
-        const inviteCode = match[1];
+      // 1. Jika input berupa tautan Saluran (whatsapp.com/channel/...)
+      const channelMatch = input.match(/whatsapp\.com\/channel\/([a-zA-Z0-9_-]+)/i);
+      if (channelMatch) {
+        const inviteCode = channelMatch[1];
         try {
           await reply('⏳ Sedang memeriksa data saluran...');
           const meta = await sock.newsletterMetadata('INVITE', inviteCode);
@@ -2140,9 +2161,51 @@ ${messageBody}
         return;
       }
 
-      // Jika input berupa ID JID langsung (@newsletter, @g.us, @s.whatsapp.net)
+      // 2. Jika input berupa tautan Undangan Grup (chat.whatsapp.com/...)
+      const groupMatch = input.match(/chat\.whatsapp\.com\/([a-zA-Z0-9_-]+)/i);
+      if (groupMatch) {
+        const inviteCode = groupMatch[1];
+        try {
+          await reply('⏳ Memeriksa tautan undangan grup WhatsApp...');
+          const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+          if (!groupInfo || !groupInfo.id) {
+            await reply('❌ Tautan grup tidak valid, kedaluwarsa, atau tautan telah direset.');
+            return;
+          }
+
+          let joinedStatus = 'ℹ️ Bot sudah berada di dalam grup ini';
+          try {
+            // Coba join ke grup via Baileys groupAcceptInvite
+            await sock.groupAcceptInvite(inviteCode);
+            joinedStatus = '🟢 Bot berhasil bergabung ke dalam grup!';
+          } catch (eJoin) {
+            // Jika bot sudah di dalam grup atau error non-fatal, lanjutkan
+            if (eJoin.message && !eJoin.message.includes('already in')) {
+              console.log(`ℹ️ [Group Join Notice]: ${eJoin.message}`);
+            }
+          }
+
+          const rawId = groupInfo.id;
+          const groupJid = rawId.endsWith('@g.us') ? rawId : `${rawId}@g.us`;
+
+          if (!config.targetJids) config.targetJids = [];
+          if (config.targetJids.includes(groupJid)) {
+            await reply(`⚠️ Grup *${groupInfo.subject || 'Grup'}* (\`${groupJid}\`) sudah terdaftar di daftar target siaran.\n\nStatus: ${joinedStatus}`);
+            return;
+          }
+
+          config.targetJids.push(groupJid);
+          saveConfig(config);
+          await reply(`✅ *Berhasil Mendaftarkan Grup Baru!*\n\n• Nama Grup: *${groupInfo.subject || 'Grup WhatsApp'}*\n• JID Grup: \`${groupJid}\`\n• Anggota: *${groupInfo.size || groupInfo.participants?.length || '?'}*\n• Status: ${joinedStatus}\n\nTotal target siaran sekarang: ${config.targetJids.length}`);
+        } catch (err) {
+          await reply(`❌ Gagal memproses tautan grup: ${err.message}\n_Pastikan tautan undangan valid dan bot belum diblokir oleh admin grup._`);
+        }
+        return;
+      }
+
+      // 3. Jika input berupa ID JID langsung (@newsletter, @g.us, @s.whatsapp.net)
       if (!input || (!input.includes('@newsletter') && !input.includes('@g.us') && !input.includes('@s.whatsapp.net'))) {
-        await reply(`❌ Format tidak valid. Anda bisa memasukkan Tautan Saluran atau ID JID.\n\nContoh:\n*${prefix}addlink https://whatsapp.com/channel/0029Va...*\natau\n*${prefix}addtarget 1203630xxxxxxx@newsletter*`);
+        await reply(`❌ Format tidak valid. Anda bisa memasukkan Tautan Grup, Tautan Saluran, atau ID JID.\n\nContoh:\n• Tautan Grup: *${prefix}addlink https://chat.whatsapp.com/Abc123...*\n• Tautan Saluran: *${prefix}addlink https://whatsapp.com/channel/0029Va...*\n• ID Langsung: *${prefix}addtarget 1203630xxxxxxx@g.us*`);
         return;
       }
 

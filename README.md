@@ -277,7 +277,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_kelas_selesai ON public.tasks (kelas, seles
 | `!targets` | `!targets` | Menampilkan daftar nomor indeks dan nama target terdaftar. |
 | `!id` | `!id` | Melihat JID ruang obrolan saat ini (grup/saluran). |
 | `!addtarget <JID>` | `!addtarget 12036302xxxxxxxxx@newsletter` | Mendaftarkan target siaran baru. |
-| `!addlink <link>` | `!addlink https://whatsapp.com/channel/xxx` | Mendaftarkan saluran via tautan invite WhatsApp. |
+| `!addlink <link>` | `!addlink https://chat.whatsapp.com/xxx` atau `!addlink https://whatsapp.com/channel/xxx` | Mendaftarkan Grup WhatsApp (auto-join) atau Saluran via tautan invite. |
 | `!deltarget <JID>` | `!deltarget 12036302xxxxxxxxx@newsletter` | Menghapus saluran/grup dari daftar siaran. |
 | `!autosend <on/off>` | `!autosend on` | Mengaktifkan/mematikan siaran harian otomatis (07:00 WIB). |
 

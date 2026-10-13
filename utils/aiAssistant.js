@@ -378,8 +378,10 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
   const defaultModels = [
     preferredModel,
     'models/gemini-3.8-flash',
-    'models/gemini-flash-latest',
+    'models/gemini-2.5-flash',
+    'models/gemini-2.5-flash-lite',
     'models/gemini-3.5-flash',
+    'models/gemini-flash-latest',
     'models/gemini-pro-latest'
   ];
   const models = [...new Set(defaultModels)];
@@ -846,7 +848,59 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
     }
   }
 
-  return '🤖 Maaf, server AI sedang mengalami antrean. Silakan coba kirim pertanyaan Anda sekali lagi.';
+  // 🚨 Emergency Smart Fallback Handler jika seluruh model Google AI sedang limit (429 / 503)
+  const lowerQ = (userQuestion || '').toLowerCase().trim();
+
+  // 1. Cek Tugas Kuliah
+  if (lowerQ.includes('tugas') && (lowerQ.includes('apa') || lowerQ.includes('daftar') || lowerQ.includes('cek') || lowerQ.includes('list') || lowerQ.includes('ada') || lowerQ.includes('pending'))) {
+    try {
+      const activeTasks = await getTasks('ALL', 'pending');
+      if (activeTasks && activeTasks.length > 0) {
+        return `⚡ *[Mode Tanggap Kuota — Tetap Siaga]*\n_Server AI sedang padat trafik, tapi tenang, Alters langsung bacain data tugas dari database:_\n\n${formatTaskList(activeTasks)}`;
+      } else {
+        return `⚡ *[Mode Tanggap Kuota]*\n🎉 Tidak ada tugas aktif yang belum selesai di database!`;
+      }
+    } catch (e) {}
+  }
+
+  // 2. Tandai Tugas Selesai Tanpa ID
+  const isDoneIntent = lowerQ.includes('selesai') || lowerQ.includes('kelar') || lowerQ.includes('beres') || lowerQ.includes('done');
+  if (isDoneIntent && lowerQ.includes('tugas')) {
+    try {
+      const activeTasks = await getTasks('ALL', 'pending');
+      const stopWords = new Set(['tugas', 'matkul', 'kuliah', 'latihan', 'individu', 'kelompok', 'uts', 'uas', 'ujian', 'udah', 'sudah', 'telah', 'selesai', 'kelar', 'beres', 'done']);
+      for (const t of activeTasks) {
+        const matkulKey = (t.matkul || '').toLowerCase();
+        const judulKey = (t.judul || '').toLowerCase();
+        const words = `${matkulKey} ${judulKey}`.split(/[\s,./\-_()]+/).filter(w => w.length > 3 && !stopWords.has(w));
+        const matches = (matkulKey && lowerQ.includes(matkulKey)) || 
+                        (judulKey && lowerQ.includes(judulKey)) ||
+                        words.some(w => lowerQ.includes(w));
+        if (matches) {
+          await markTaskDone(t.id);
+          return `⚡ *[Mode Tanggap Kuota — Tugas Diselesaikan]*\n\n🎉 Mantap! Tugas *${t.matkul}* - *${t.judul}* (ID: ${t.id}) berhasil Alters tandai *SELESAI* di database!\n\n_Tetap bisa diproses otomatis meski kuota AI sedang padat! 🫡_`;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 3. Cek Jadwal Kuliah Hari Ini
+  if (lowerQ.includes('jadwal') || lowerQ.includes('hari ini ada apa') || lowerQ.includes('kuliah apa')) {
+    try {
+      const dtNow = getIndonesianDateTime();
+      const currentDay = (dtNow.dayKey || dtNow.hari || 'senin').toLowerCase();
+      const sched = schedules?.['B']?.[currentDay] || schedules?.['A']?.[currentDay] || [];
+      if (sched.length > 0) {
+        let scText = `⚡ *[Mode Tanggap Kuota — Jadwal Kuliah Hari Ini]*\n📅 *Hari:* ${dtNow.dayFormatted}\n\n`;
+        sched.forEach((s) => {
+          scText += `▫️ *${s.matkul}*\n   ⏰ ${s.jam} | 📍 ${s.ruang}\n`;
+        });
+        return scText;
+      }
+    } catch (e) {}
+  }
+
+  return '🤖 *[Antrean Server AI / Kuota Terbatas]*\nServer Google Gemini sedang mengalami pembatasan kuota (Rate Limit) atau lonjakan trafik sementara.\n\n💡 *Tips Bebas Kuota:* \nUntuk tugas & jadwal, Anda tetap bisa pakai perintah langsung tanpa kuota AI:\n• *!tugas* (Cek tugas aktif)\n• *!tugas done <ID/Matkul>* (Tandai selesai)\n• *!hariini* (Cek jadwal hari ini)\n• *!all* (Polling kehadiran dosen)';
 }
 
 module.exports = {
