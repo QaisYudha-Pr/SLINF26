@@ -19,5 +19,15 @@
   "supabase": {
     "url": "https://YOUR_PROJECT_ID.supabase.co",
     "anonKey": "YOUR_SUPABASE_ANON_KEY"
+  },
+  "geminiModel": "models/gemini-3.8-flash",
+  "reminder": {
+    "enabled": true,
+    "cronTime": "0 19 * * *",
+    "timezone": "Asia/Jakarta"
+  },
+  "groupSecurity": {
+    "adminOnlyManagement": true,
+    "cooldownSeconds": 3
   }
 }

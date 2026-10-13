@@ -275,6 +275,7 @@ const {
 } = aiAssistantModule;
 const {
   sendDailyBroadcast,
+  sendTaskReminder,
   startScheduler,
   stopScheduler
 } = require('./scheduler');
@@ -311,6 +312,24 @@ function isOwner(senderJid, fromMe, config) {
 
 function isAuthorizedSender(senderJid, fromMe, config) {
   return true; // Perintah publik tetap bisa diakses di grup
+}
+
+/**
+ * Mengecek apakah pengirim adalah Admin di Grup WhatsApp
+ */
+async function isGroupAdmin(sockInstance, groupJid, userJid) {
+  if (!groupJid?.endsWith('@g.us') || !sockInstance) return false;
+  try {
+    const meta = await sockInstance.groupMetadata(groupJid);
+    const cleanUser = String(userJid || '').split(':')[0].replace(/[^0-9]/g, '');
+    const participant = (meta.participants || []).find(p => {
+      const cleanP = String(p.id || '').split(':')[0].replace(/[^0-9]/g, '');
+      return cleanP === cleanUser;
+    });
+    return Boolean(participant && (participant.admin === 'admin' || participant.admin === 'superadmin'));
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
@@ -780,6 +799,7 @@ async function handleIncomingMessage(msg) {
       'today', 'hariini', 'tugas', 'task',
       'listdosen', 'menu', 'help', 'ai', 'tanya',
       'id', 'scanjadwal', 'scan', 'reset', 'ingat',
+      'reminder', 'ingatkan', 'pengingat',
       'checkupdate', 'cekupdate'
     ];
 
@@ -882,7 +902,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'ingatkan', 'pengingat'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -931,6 +951,8 @@ async function handleIncomingMessage(msg) {
   } else if (command === 'jadwali') {
     command = 'jadwal';
     args[1] = 'i';
+  } else if (command === 'ingatkan' || command === 'pengingat') {
+    command = 'reminder';
   }
 
   // 3. KUNCI SEMUA PERINTAH RAHASIA / OWNER SECARA TOTAL:
@@ -947,6 +969,18 @@ async function handleIncomingMessage(msg) {
   if (ownerOnlyCommands.includes(command) && !userIsOwner) {
     console.log(`⛔ [Akses Rahasia Ditolak] Perintah '${command}' dicoba oleh non-owner (${sender}). Bot sengaja diam.`);
     return; // Diam tanpa membalas sedikit pun
+  }
+
+  // 4. PROTEKSI KEAMANAN GRUP (GROUP MANAGEMENT SECURITY):
+  // Di dalam grup, perintah pengaturan jadwal, tagall massal, & reminder HANYA diizinkan untuk Admin Grup atau Bot Owner
+  const isSenderGroupAdmin = remoteJid.endsWith('@g.us') ? await isGroupAdmin(sock, remoteJid, sender) : false;
+  const canManageGroup = userIsOwner || isSenderGroupAdmin;
+
+  const groupAdminOnlyCommands = ['gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'tagall', 'hidetag', 'semua', 'reminder'];
+  if (groupAdminOnlyCommands.includes(command) && remoteJid.endsWith('@g.us') && !canManageGroup) {
+    await react('🔒');
+    await reply(`🛡️ *[AKSES TERBATAS — KEAMANAN GRUP]*\n\nPerintah *${prefix}${command}* hanya dapat dijalankan oleh *Admin Grup* atau *Owner Bot* demi menjaga keakuratan data perkuliahan.\n\n💡 _Perintah bebas untuk semua mahasiswa:_ \n• *${prefix}jadwal* (Cek jadwal kuliah)\n• *${prefix}tugas* (Cek daftar tugas)\n• *${prefix}all* (Polling kehadiran)\n• *@Alters <pertanyaan>* (Tanya asisten AI)`);
+    return;
   }
 
   switch (command) {
@@ -1172,6 +1206,7 @@ ${schedSummary}
 • *${prefix}tugas* ➔ Tampilkan semua tugas aktif
 • *${prefix}tugas tambah <matkul> | <judul> | <deadline>*
 • *${prefix}tugas done <id>* ➔ Tandai tugas selesai
+• *${prefix}reminder* ➔ Cek & atur pengingat tugas harian (19:00)
 
 📢 *SIARAN & BROADCAST*
 • *${prefix}today* ➔ Pratinjau siaran hari ini
@@ -1182,10 +1217,11 @@ ${schedSummary}
 🤖 *TANYA ALTERS (AI CO-PILOT)*
 • *${prefix}ai <pertanyaan>* atau tag *@Alters* di grup
 • *${prefix}reset* ➔ Bersihkan memori obrolan
-• _Contoh:_ *${prefix}ai kirimkan siaran polling dosen ke siaran testing*
+• _Contoh:_ *${prefix}ai cari rangkuman materi Basis Data 1NF-3NF*
 • _Contoh:_ *${prefix}ai catat tugas Basdat deadline jumat*
 ${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
 • *${prefix}gantijam* / *${prefix}gantiruang* / *${prefix}batal* ➔ Ubah jadwal cepat
+• *${prefix}reminder on/off/set* ➔ Saklar & atur jam pengingat
 • *${prefix}addtarget <id>* / *${prefix}deltarget <id>* ➔ Kelola target
 • *${prefix}status* / *${prefix}update* / *${prefix}restart*\n` : ''}
 💡 _Info: Ketik *${prefix}menu all* untuk panduan lengkap atau *${prefix}menu <kategori>* (jadwal/tugas/poll/ai)._`;
@@ -2142,6 +2178,82 @@ ${messageBody}
       }
 
       await reply(`❌ Format salah. Gunakan:\n*${prefix}autosend on [jam:menit]* (contoh: *${prefix}autosend on 07:00*)\natau *${prefix}autosend off*`);
+      break;
+    }
+
+    case 'reminder':
+    case 'ingatkan':
+    case 'pengingat': {
+      const subAction = (args[1] || '').toLowerCase();
+      const valParam = (args[2] || '').trim();
+
+      if (!config.reminder) {
+        config.reminder = { enabled: true, cronTime: '0 19 * * *', timezone: 'Asia/Jakarta' };
+      }
+
+      if (subAction === 'off') {
+        config.reminder.enabled = false;
+        saveConfig(config);
+        startScheduler(sock);
+        await react('🛑');
+        await reply('🛑 *[Pengingat Tugas Dinonaktifkan]*\nPengingat tugas kuliah malam hari otomatis telah dinonaktifkan.');
+        return;
+      }
+
+      if (subAction === 'on') {
+        config.reminder.enabled = true;
+        if (valParam && /^\d{1,2}:\d{2}$/.test(valParam)) {
+          const [hour, minute] = valParam.split(':');
+          config.reminder.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
+        }
+        saveConfig(config);
+        startScheduler(sock);
+        await react('⏰');
+        await reply(`✅ *[Pengingat Tugas Diaktifkan]*\n⏰ Jadwal Cron: \`${config.reminder.cronTime}\` (${config.reminder.timezone || 'Asia/Jakarta'})\nBot akan otomatis mengecek tugas di Supabase dan mengingatkan ke target!`);
+        return;
+      }
+
+      if (subAction === 'set' && valParam && /^\d{1,2}:\d{2}$/.test(valParam)) {
+        const [hour, minute] = valParam.split(':');
+        config.reminder.cronTime = `${parseInt(minute, 10)} ${parseInt(hour, 10)} * * *`;
+        config.reminder.enabled = true;
+        saveConfig(config);
+        startScheduler(sock);
+        await react('⏰');
+        await reply(`✅ *[Waktu Pengingat Diperbarui]*\n⏰ Pengingat tugas disetel setiap hari pada jam *${valParam} WIB*.\nPengingat otomatis aktif!`);
+        return;
+      }
+
+      if (subAction === 'now' || subAction === 'kirim' || subAction === 'cek') {
+        await react('⏳');
+        await reply('⏳ Memeriksa tugas aktif dan mengirim pengingat sekarang...');
+        const remRes = await sendTaskReminder(sock, [remoteJid]);
+        if (remRes.success) {
+          await react('✅');
+        } else {
+          await reply(`⚠️ Kendala pengingat: ${remRes.message}`);
+        }
+        return;
+      }
+
+      // Tampilan status default
+      const isRemActive = config.reminder.enabled ? '🟢 *Aktif*' : '🔴 *Nonaktif*';
+      const remTimeStr = config.reminder.cronTime || '0 19 * * *';
+      await reply(
+`⏰ *[PENGATURAN PENGINGAT TUGAS]*
+━━━━━━━━━━━━━━━━━━━━━
+• Status Pengingat: ${isRemActive}
+• Jadwal Cron: \`${remTimeStr}\` (Default: 19:00 WIB)
+• Target: Otomatis ke Saluran & Grup terdaftar
+
+📌 *PILIHAN PERINTAH:*
+• *${prefix}reminder now* ➔ Kirim pengingat tugas sekarang ke chat ini
+• *${prefix}reminder on [jam]* ➔ Aktifkan (contoh: *${prefix}reminder on 19:00*)
+• *${prefix}reminder off* ➔ Nonaktifkan pengingat
+• *${prefix}reminder set <jam:menit>* ➔ Ubah jam pengingat (contoh: *${prefix}reminder set 20:30*)
+
+💡 _Tips AI: Kamu juga bisa suruh Alters langsung: "Alters ingatkan tugas apa aja hari ini"!_`
+      );
       break;
     }
 

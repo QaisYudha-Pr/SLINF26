@@ -299,12 +299,15 @@ Jika menyuruh restart bot:
 
 Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu).`;
 
-  const models = [
-    'models/gemini-flash-lite-latest',
+  const preferredModel = config.geminiModel || 'models/gemini-3.8-flash';
+  const defaultModels = [
+    preferredModel,
+    'models/gemini-3.8-flash',
     'models/gemini-flash-latest',
     'models/gemini-3.5-flash',
-    'models/gemini-3.8-flash'
+    'models/gemini-pro-latest'
   ];
+  const models = [...new Set(defaultModels)];
 
   // sessionId sudah didefinisikan di atas (sama dengan memoryTargetId)
 
@@ -377,10 +380,9 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
 
       if (res.status === 200) {
         const data = await res.json();
-        let replyText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const candidateParts = data.candidates?.[0]?.content?.parts || [];
+        let replyText = candidateParts.map(p => p.text).filter(Boolean).join('\n\n').trim();
         if (!replyText) continue;
-
-        replyText = replyText.trim();
 
         // Periksa apakah AI memicu aksi penyimpanan jadwal, tugas, atau konfigurasi
         const actionMatch = replyText.match(/\[\[ACTION:(ADD_SCHEDULE|DELETE_SCHEDULE|BATCH_SCHEDULE|SET_AUTOSEND|ADD_TASK|DONE_TASK|DELETE_TASK|GET_TASKS|POLL_DOSEN|CREATE_POLL|SEND_BROADCAST|SYSTEM):([\s\S]*?)\]\]/);
