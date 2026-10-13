@@ -489,21 +489,20 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
 
   let replyText = null;
 
-  // ⚡ TIER 1: GROQ CLOUD LPU ENGINE (Ultra Cepat ~1.5s, 0% CPU Laptop/Termux, Bebas Limit 503)
-  const preferredGroqModel = config.groqModel || 'qwen/qwen3.8-27b';
-  const groqModels = [...new Set([preferredGroqModel, 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'allam-2-7b'])];
+  const preferredGroqModel = config.groqModel || 'openai/gpt-oss-20b';
+  const groqModels = [...new Set([preferredGroqModel, 'openai/gpt-oss-20b', 'allam-2-7b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b'])];
 
   if (groqApiKey && !mediaFile) {
     const groqMessages = [
       { role: 'system', content: systemInstruction }
     ];
-    if (session.turns && session.turns.length > 0) {
-      for (const turn of session.turns) {
-        groqMessages.push({
-          role: turn.role === 'model' ? 'assistant' : turn.role,
-          content: turn.text
-        });
-      }
+    // Batasi riwayat obrolan ke 4 percakapan terakhir agar hemat token dan tidak pernah kena HTTP 413
+    const recentTurns = (session.turns || []).slice(-4);
+    for (const turn of recentTurns) {
+      groqMessages.push({
+        role: turn.role === 'model' ? 'assistant' : turn.role,
+        content: turn.text
+      });
     }
     groqMessages.push({
       role: 'user',

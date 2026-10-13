@@ -945,7 +945,7 @@ async function handleIncomingMessage(msg) {
       'today', 'hariini', 'tugas', 'task',
       'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'importmhs', 'batchmhs',
       'pilihan', 'tombol', 'menuinteraktif',
-      'listdosen', 'menu', 'help', 'ai', 'tanya',
+      'listdosen', 'menu', 'help', 'ai', 'tanya', 'start', 'adler', 'alter',
       'id', 'scanjadwal', 'scan', 'reset', 'ingat',
       'reminder', 'ingatkan', 'pengingat',
       'checkupdate', 'cekupdate'
@@ -1053,7 +1053,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'importmhs', 'batchmhs', 'pilihan', 'tombol', 'menuinteraktif', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat', 'setconfig', 'setgroq', 'setgemini'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'start', 'adler', 'alter', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'importmhs', 'batchmhs', 'pilihan', 'tombol', 'menuinteraktif', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat', 'setconfig', 'setgroq', 'setgemini'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -1137,6 +1137,8 @@ async function handleIncomingMessage(msg) {
     args[1] = 'i';
   } else if (command === 'ingatkan' || command === 'pengingat') {
     command = 'reminder';
+  } else if (command === 'start' || command === 'adler' || command === 'alter') {
+    command = 'menu';
   }
 
   // 3. KUNCI SEMUA PERINTAH RAHASIA / OWNER SECARA TOTAL:
@@ -1351,22 +1353,22 @@ Semua jawaban AI dan perintah dikirim instan tanpa jeda delay buatan!`;
       const schedB = (schedules?.B?.[dayKey] || []);
       let schedSummary = '';
       if (schedA.length === 0 && schedB.length === 0) {
-        schedSummary = '🏖️ Tidak ada perkuliahan hari ini (Libur)';
+        schedSummary = '🏖️ Hari ini Libur (Tidak ada perkuliahan)';
       } else {
         const itemsA = schedA.map(s => s.matkul).join(', ') || '-';
         const itemsB = schedB.map(s => s.matkul).join(', ') || '-';
-        schedSummary = `• Kelas A (${schedA.length} matkul): ${itemsA}\n• Kelas B (${schedB.length} matkul): ${itemsB}`;
+        schedSummary = `• Kelas A: *${itemsA}*\n• Kelas B: *${itemsB}*`;
       }
 
       // Ringkasan tugas aktif
-      let pendingTasksText = 'Ketik !tugas untuk melihat daftar';
+      let pendingTasksText = 'Cek opsi [2]';
       try {
-        const tasksPromise = getTasks('A', 'pending');
+        const tasksPromise = getTasks('ALL', 'pending');
         const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 1200));
         const activeTasks = await Promise.race([tasksPromise, timeoutPromise]);
         if (Array.isArray(activeTasks)) {
           pendingTasksText = activeTasks.length > 0 
-            ? `📌 *${activeTasks.length} tugas aktif* (Ketik *${prefix}tugas* untuk melihat)`
+            ? `📌 *${activeTasks.length} tugas aktif* (Ketik *${prefix}tugas*)`
             : '🎉 Tidak ada tugas tertunda';
         }
       } catch (e) {}
@@ -1374,7 +1376,7 @@ Semua jawaban AI dan perintah dikirim instan tanpa jeda delay buatan!`;
       let dashboardText = 
 `╭───「 🎓 *ALTERS BOT — MENU UTAMA* 」
 │ 📅 *${dt.fullFormatted}*
-│ 🤖 Bot: 🟢 Aktif | AI Engine: Groq LPU + Gemini
+│ 🤖 Bot: 🟢 Aktif | AI Engine: Groq LPU (Ultra Fast)
 ╰──────────────────────────
 
 📚 *KULIAH HARI INI (${dt.dayName}):*
@@ -1391,52 +1393,29 @@ ${schedSummary}
 [6] ➔ ℹ️ Status Bot & Host Server
 [7] ➔ 🤖 Panduan Tanya Alters AI
 
-🔘 _Suka versi tombol klik? Ketik:_ *${prefix}tombol*
+🔘 *Silakan klik tombol menu di bawah ini:*
+_(Atau balas pesan ini dengan angka [1 - 7])_
 ━━━━━━━━━━━━━━━━━━━━
-
-📚 *JADWAL KULIAH*
-• *${prefix}jadwal a* / *b* / *i* ➔ Jadwal kuliah hari ini
-• *${prefix}jadwal a senin* ➔ Jadwal hari tertentu
-• *${prefix}scanjadwal* ➔ Auto-scan foto/PDF jadwal via AI
-
-📊 *POLLING KEHADIRAN DOSEN*
-• *${prefix}all* ➔ Buat polling semua dosen di chat ini
-• *${prefix}all target* ➔ Kirim polling dosen ke semua saluran/grup
-• *${prefix}dosen <nama>* ➔ Polling 1 dosen (cth: *${prefix}dosen Bu Woro*)
-• *${prefix}poll <judul>|<opsi1>|<opsi2>* ➔ Polling kustom bebas
-
-📝 *TUGAS KULIAH (CLOUD)*
-• *${prefix}tugas* ➔ Tampilkan semua tugas aktif
-• *${prefix}tugas tambah <matkul> | <judul> | <deadline>*
-• *${prefix}tugas done <id>* ➔ Tandai tugas selesai
-• *${prefix}reminder* ➔ Cek & atur pengingat tugas harian (19:00)
-
-🎓 *DATABASE MAHASISWA*
-• *${prefix}mhs* ➔ Cek data mahasiswa terdaftar
-• *${prefix}tambahmhs <nama> | <nim>* ➔ Tambah mahasiswa
-• *${prefix}importmhs <data>* ➔ Impor massal (10 - 100+ data sekaligus)
-
-📢 *SIARAN & BROADCAST*
-• *${prefix}today* ➔ Pratinjau siaran hari ini
-• *${prefix}send [target]* ➔ Kirim agenda ke target pilihan
-• *${prefix}bc [target] <pesan>* ➔ Kirim pengumuman bebas
-• *${prefix}targets* ➔ Cek daftar target saluran & grup
-
-🤖 *TANYA ALTERS (AI CO-PILOT)*
-• *${prefix}ai <pertanyaan>* atau tag *@Alters* di grup
-• *${prefix}reset* ➔ Bersihkan memori obrolan
-• _Contoh:_ *${prefix}ai catat tugas Basdat deadline jumat*
-• _Contoh:_ *${prefix}ai targetin grup ini*
-${userIsOwner ? `\n👑 *KONTROL ADMIN / OWNER:*
-• *${prefix}setconfig <kunci> <nilai>* ➔ Atur config langsung dari WA
-• *${prefix}setgroq <kunci>* / *${prefix}setgemini <kunci>* ➔ Update API Key
-• *${prefix}gantijam* / *${prefix}gantiruang* / *${prefix}batal* ➔ Ubah jadwal cepat
-• *${prefix}reminder on/off/set* ➔ Saklar & atur jam pengingat
-• *${prefix}addtarget <id>* / *${prefix}deltarget <id>* ➔ Kelola target
-• *${prefix}status* / *${prefix}update* / *${prefix}restart*\n` : ''}
-💡 _Info: Ketik *${prefix}menu all* untuk panduan lengkap atau *${prefix}menu <kategori>* (jadwal/tugas/poll/ai)._`;
+💡 _Untuk daftar seluruh perintah teks, ketik: *${prefix}menu all*_`;
 
       await reply(dashboardText);
+
+      const pollTitle = `🔘 MENU ALTERS BOT (${dt.dayName})`;
+      const pollOptions = [
+        '📚 1. Jadwal Kuliah Hari Ini',
+        '📝 2. Daftar Tugas Aktif',
+        '🎓 3. Cek Data Mahasiswa',
+        '📊 4. Polling Kehadiran Dosen',
+        '⏰ 5. Cek Pengingat Aktif',
+        'ℹ️ 6. Status Bot & Sistem',
+        '❓ 7. Bantuan Tanya AI'
+      ];
+
+      try {
+        await sendNativePoll(sock, remoteJid, pollTitle, pollOptions, 1);
+      } catch (ePoll) {
+        console.warn('⚠️ [Poll Menu Warning]:', ePoll.message);
+      }
       break;
     }
 
