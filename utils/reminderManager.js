@@ -47,13 +47,25 @@ function addCustomReminder({ text, timeStr = '19:00', dayStr = '', targetJid = n
     cleanTime = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
   }
 
+  const cleanCreator = creatorJid
+    ? (String(creatorJid).split('@')[0].split(':')[0] + '@s.whatsapp.net')
+    : null;
+
+  let cleanTarget = targetJid;
+  if (cleanTarget) {
+    const tLower = String(cleanTarget).toLowerCase().trim();
+    if (['gw', 'me', 'saya', 'pc', 'dm', 'pribadi'].includes(tLower)) {
+      cleanTarget = cleanCreator;
+    }
+  }
+
   const reminder = {
     id: newId,
     text: text || 'Pengingat Deadline / Tugas',
     time: cleanTime,
     day: dayStr ? dayStr.toLowerCase().trim() : '',
-    targetJid: targetJid || null,
-    creatorJid: creatorJid || null,
+    targetJid: cleanTarget || null,
+    creatorJid: cleanCreator || null,
     createdAt: new Date().toISOString(),
     fired: false
   };
@@ -129,7 +141,14 @@ function formatRemindersList() {
   let text = `⏰ *DAFTAR PENGINGAT DEADLINE KUSTOM (${list.length}):*\n━━━━━━━━━━━━━━━━━━━━━\n\n`;
   list.forEach(r => {
     const dayLabel = r.day ? ` (Hari: *${r.day}*)` : '';
-    text += `▫️ *[ID: ${r.id}]* ${r.text}\n   ⏰ Jam: *${r.time} WIB*${dayLabel}\n`;
+    let targetLabel = 'Semua Target';
+    if (r.targetJid) {
+      if (r.targetJid.includes('@s.whatsapp.net')) targetLabel = 'DM Pribadi';
+      else if (r.targetJid.includes('@g.us')) targetLabel = 'Grup';
+      else if (r.targetJid.includes('@newsletter')) targetLabel = 'Saluran';
+      else targetLabel = r.targetJid;
+    }
+    text += `▫️ *[ID: ${r.id}]* ${r.text}\n   ⏰ Jam: *${r.time} WIB*${dayLabel} | 🎯 Target: *${targetLabel}*\n`;
   });
   text += `\n━━━━━━━━━━━━━━━━━━━━━\n💡 _Ketik !delreminder <ID> untuk menghapus pengingat._`;
   return text;

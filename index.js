@@ -1822,28 +1822,49 @@ _[tempel/paste teks jadwal kamu di sini]_
         return;
       }
 
-      // Jika ada waktu dan teks dipisahkan |: !ingatkan 19:30 | Kuis DFA besok
+      // Jika ada waktu dan teks dipisahkan |: !ingatkan 19:30 | Kuis DFA besok | gw
       if (query.includes('|')) {
         const parts = query.split('|').map(s => s.trim());
         const timePart = parts[0];
         const textPart = parts[1];
-        const dayPart = parts[2] || '';
+        let dayPart = '';
+        let targetPart = remoteJid;
+
+        for (let i = 2; i < parts.length; i++) {
+          const p = parts[i].toLowerCase();
+          if (['gw', 'me', 'saya', 'pc', 'dm', 'pribadi'].includes(p)) {
+            targetPart = sender || remoteJid;
+          } else if (['saluran', 'channel'].includes(p)) {
+            const nl = (config.targetJids || []).filter(t => t.endsWith('@newsletter'));
+            if (nl.length > 0) targetPart = nl[0];
+          } else if (['grup', 'group'].includes(p)) {
+            targetPart = remoteJid.endsWith('@g.us') ? remoteJid : ((config.targetJids || []).find(t => t.endsWith('@g.us')) || remoteJid);
+          } else {
+            dayPart = parts[i];
+          }
+        }
 
         const newRem = addCustomReminder({
           text: textPart || 'Pengingat Deadline',
           timeStr: timePart,
           dayStr: dayPart,
-          targetJid: remoteJid,
+          targetJid: targetPart,
           creatorJid: sender
         });
+
+        const isDmToUser = targetPart && targetPart.endsWith('@s.whatsapp.net');
+        const targetDesc = isDmToUser 
+          ? 'DM / Chat Pribadimu' 
+          : (targetPart.endsWith('@newsletter') ? 'Saluran WhatsApp' : (targetPart.endsWith('@g.us') ? 'Grup WhatsApp' : 'Chat ini'));
+
         const dayLabel = newRem.day ? ` (Hari: *${newRem.day}*)` : '';
-        await reply(`⏰ *PENGINGAT DEADLINE BERHASIL DIBUAT!*\n\n▫️ *ID:* ${newRem.id}\n📌 *Agenda:* ${newRem.text}\n⏰ *Waktu:* ${newRem.time} WIB${dayLabel}\n\n💡 _Bot akan otomatis mengirimkan pengingat tepat waktu ke chat ini._\n_Hapus pengingat: *${prefix}delreminder ${newRem.id}*_`);
+        await reply(`⏰ *PENGINGAT DEADLINE BERHASIL DIBUAT!*\n\n▫️ *ID:* ${newRem.id}\n📌 *Agenda:* ${newRem.text}\n⏰ *Waktu:* ${newRem.time} WIB${dayLabel}\n🎯 *Tujuan:* *${targetDesc}*\n\n💡 _Bot akan otomatis mengirimkan pengingat tepat waktu ke ${targetDesc}._\n_Hapus pengingat: *${prefix}delreminder ${newRem.id}*_`);
         return;
       }
 
       // Tampilkan daftar pengingat
       const listText = formatRemindersList();
-      await reply(`${listText}\n\n💡 *Cara Pasang Pengingat Baru:*\n*${prefix}ingatkan <jam> | <agenda> | [hari opsional]*\nContoh: *${prefix}ingatkan 19:30 | Kuis DFA besok*\n_Atau cukup tanya AI:_ *${prefix}ai ingatkan besok jam 8 kuis DFA*`);
+      await reply(`${listText}\n\n💡 *Cara Pasang Pengingat Baru:*\n*${prefix}ingatkan <jam> | <agenda> | [hari] | [target: gw / grup / saluran]*\nContoh:\n• *${prefix}ingatkan 19:30 | Kuis DFA | besok | gw* (kirim japri ke DM kamu)\n• *${prefix}ingatkan 08:00 | Kumpul Tugas | grup*\n_Atau cukup tanya AI:_ *${prefix}ai ingatkan besok jam 8 kuis DFA ke gw aja*`);
       break;
     }
 

@@ -270,9 +270,17 @@ atau jika menyuruh mematikan:
 
 6. Pengingat Deadline & Agenda Kustom Fleksibel (Custom Reminder):
 - Data Pengingat Kustom Aktif: ${customRemindersSummary}
-- Pasang pengingat kustom baru (contoh: "ingatkan besok jam 08:00 ada kuis DFA", "pasang pengingat jam 19:30 kumpul laporan", "ingatkan hari jumat jam 23:00"):
-[[ACTION:ADD_REMINDER:{"text":"Kuis DFA","time":"08:00","day":"besok"}]]
-(Format time: "HH:MM", format day opsional: "besok", "senin", "jumat", dll).
+- Pasang pengingat kustom baru:
+[[ACTION:ADD_REMINDER:{"text":"Kuis DFA","time":"08:00","day":"besok","target":"gw"}]]
+Parameter:
+• "text": judul agenda/tugas yang diingatkan
+• "time": waktu jam format "HH:MM" (contoh: "08:00", "19:30")
+• "day": nama hari opsional ("besok", "senin", "jumat", dll)
+• "target": tujuan pengiriman pesan pengingat:
+  - "gw" / "me" / "pc" / "dm" / "pribadi" ➔ kirim HANYA ke chat pribadi / DM pengirim (WAJIB gunakan ini jika pengguna bilang "ke gw aja", "ke saya", "pc ke gw", "dm gw", "ingatkan aku pribadi")!
+  - "grup" ➔ kirim ke grup
+  - "saluran" ➔ kirim ke saluran / testing
+  - "sini" ➔ kirim ke chat saat ini (default jika tidak disebut)
 - Hapus pengingat kustom (contoh: "hapus pengingat ID 1"):
 [[ACTION:DELETE_REMINDER:{"id":1}]]
 - Tampilkan daftar pengingat aktif (contoh: "daftar pengingat", "ada pengingat apa aja?"):
@@ -315,9 +323,12 @@ atau jika menyuruh mematikan:
 • Permintaan: "ubah deadline tugas 1 jadi besok jam 23.59" atau "/ai ubah batas tugas 1 jadi jumat malam"
   Tindakan: Ubah deadline tugas dengan ID 1.
   Aksi: [[ACTION:UPDATE_TASK:{"id":1,"deadline":"Besok jam 23:59"}]]
-• Permintaan: "ingatkan besok jam 7 pagi kuis dfa" atau "/ai pasang pengingat kuis dfa jam 07:00"
-  Tindakan: Buat pengingat kustom untuk besok jam 07:00.
-  Aksi: [[ACTION:ADD_REMINDER:{"text":"Kuis DFA","time":"07:00","day":"besok"}]]
+• Permintaan: "ingatkan besok jam 7 pagi kuis dfa ke gw aja" atau "/ai ingatkan jam 8 malem kuis dfa pc ke gw"
+  Tindakan: Buat pengingat kustom khusus chat pribadi / DM pengirim.
+  Aksi: [[ACTION:ADD_REMINDER:{"text":"Kuis DFA","time":"07:00","day":"besok","target":"gw"}]]
+• Permintaan: "ingatkan jam 19:30 kumpul laporan ke grup"
+  Tindakan: Buat pengingat kustom ke grup.
+  Aksi: [[ACTION:ADD_REMINDER:{"text":"Kumpul Laporan","time":"19:30","target":"grup"}]]
 • Permintaan: "ubah jam autosend jadi jam 06:30" atau "/ai ganti siaran otomatis jam 6 pagi"
   Tindakan: Atur waktu autosend ke 06:30 WIB.
   Aksi: [[ACTION:SET_AUTOSEND:{"enabled":true,"time":"06:30"}]]
@@ -524,15 +535,43 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 return `${cleanReply}\n\n⚠️ ${resUpdate.message || 'Gagal memperbarui data tugas.'}`;
               }
             } else if (actionType === 'ADD_REMINDER') {
+              const cfg = loadConfig();
+              let targetDest = remoteJid; // default ke chat saat ini
+              const targetStr = (actionData.target || '').toLowerCase().trim();
+
+              if (['gw', 'me', 'saya', 'pc', 'dm', 'pribadi'].includes(targetStr)) {
+                targetDest = senderJid || remoteJid;
+                if (!targetDest.endsWith('@s.whatsapp.net')) {
+                  const numOnly = (senderJid || '').replace(/[^0-9]/g, '');
+                  if (numOnly) targetDest = `${numOnly}@s.whatsapp.net`;
+                }
+              } else if (targetStr === 'saluran' || targetStr === 'channel') {
+                const nl = (cfg.targetJids || []).filter(t => t.endsWith('@newsletter'));
+                if (nl.length > 0) targetDest = nl[0];
+              } else if (targetStr === 'grup' || targetStr === 'group') {
+                if (remoteJid.endsWith('@g.us')) {
+                  targetDest = remoteJid;
+                } else {
+                  const gr = (cfg.targetJids || []).filter(t => t.endsWith('@g.us'));
+                  if (gr.length > 0) targetDest = gr[0];
+                }
+              }
+
               const newRem = addCustomReminder({
                 text: actionData.text || 'Pengingat Deadline / Agenda',
                 timeStr: actionData.time || '19:00',
                 dayStr: actionData.day || '',
-                targetJid: remoteJid,
-                creatorJid: senderJid
+                targetJid: targetDest,
+                creatorJid: senderJid || remoteJid
               });
+
+              const isDmToUser = targetDest && targetDest.endsWith('@s.whatsapp.net');
+              const targetDesc = isDmToUser 
+                ? 'DM / Chat Pribadimu' 
+                : (targetDest.endsWith('@newsletter') ? 'Saluran WhatsApp' : (targetDest.endsWith('@g.us') ? 'Grup WhatsApp' : 'Chat ini'));
+
               const dayLabel = newRem.day ? ` (Hari: *${newRem.day}*)` : '';
-              return `${cleanReply}\n\n⏰ *[Pengingat Kustom Berhasil Disetel]*\n▫️ *ID:* ${newRem.id}\n📌 *Agenda:* ${newRem.text}\n⏰ *Waktu:* ${newRem.time} WIB${dayLabel}\n\n💡 _Bot akan otomatis mengirimkan pengingat tepat waktu ke chat ini!_`;
+              return `${cleanReply}\n\n⏰ *[Pengingat Kustom Berhasil Disetel]*\n▫️ *ID:* ${newRem.id}\n📌 *Agenda:* ${newRem.text}\n⏰ *Waktu:* ${newRem.time} WIB${dayLabel}\n🎯 *Tujuan:* *${targetDesc}*\n\n💡 _Bot akan otomatis mengirimkan pengingat tepat waktu ke ${targetDesc}!_`;
             } else if (actionType === 'DELETE_REMINDER') {
               const isDel = deleteCustomReminder(actionData.id);
               if (isDel) {

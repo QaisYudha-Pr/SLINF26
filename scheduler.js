@@ -253,9 +253,27 @@ ${isFullSuccess ? '✅ Semua saluran & grup berhasil menerima siaran harian tepa
 ╰──────────────────────────────────────────
 💡 _Pengingat otomatis diatur melalui bot / Alters AI._`;
 
-            const targets = (Array.isArray(item.targets) && item.targets.length > 0)
-              ? item.targets
-              : (item.targetJid ? [item.targetJid] : (cfg.targetJids || []));
+            let targets = [];
+            if (Array.isArray(item.targets) && item.targets.length > 0) {
+              targets = item.targets;
+            } else if (item.targetJid) {
+              const tStr = String(item.targetJid).toLowerCase().trim();
+              if (['gw', 'me', 'saya', 'pc', 'dm', 'pribadi'].includes(tStr)) {
+                targets = item.creatorJid ? [item.creatorJid] : [];
+              } else if (tStr === 'saluran' || tStr === 'channel') {
+                targets = (cfg.targetJids || []).filter(t => t.endsWith('@newsletter'));
+              } else if (tStr === 'grup' || tStr === 'group') {
+                targets = (cfg.targetJids || []).filter(t => t.endsWith('@g.us'));
+              } else {
+                targets = [item.targetJid];
+              }
+            } else {
+              targets = cfg.targetJids || [];
+            }
+
+            if (targets.length === 0 && item.creatorJid) {
+              targets = [item.creatorJid];
+            }
 
             for (const target of targets) {
               try {
