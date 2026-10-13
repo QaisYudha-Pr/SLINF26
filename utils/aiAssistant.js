@@ -70,6 +70,16 @@ try {
 } catch (e) {}
 const { sendNativePoll } = pollUtils;
 
+let mahasiswaManager = {
+  getMahasiswaList: async () => [],
+  addMahasiswa: async () => ({ success: false }),
+  deleteMahasiswa: async () => ({ success: false }),
+  searchMahasiswa: async () => []
+};
+try {
+  mahasiswaManager = require('./mahasiswaManager');
+} catch (e) {}
+
 /**
  * Mengirim pertanyaan ke Google Gemini AI (gemini-3.8-flash)
  * Dilengkapi kemampuan multimodal, contextual memory, proactive clarification, dan action copilot.
@@ -124,6 +134,8 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
   const tasksSummary = JSON.stringify(pendingTasks);
   const activeCustomReminders = getCustomReminders().filter(r => !r.fired);
   const customRemindersSummary = JSON.stringify(activeCustomReminders);
+  const mahasiswaList = await mahasiswaManager.getMahasiswaList().catch(() => []);
+  const mahasiswaSummary = JSON.stringify(mahasiswaList);
 
   const DAYS_ORDER = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
   const todayKey = (dt.dayKey || dt.hari || 'senin').toLowerCase();
@@ -138,6 +150,10 @@ async function askGeminiAI(userQuestion, isSenderOwner = false, mediaFile = null
 - Siapa kamu: Asisten AI akademik & co-pilot pintar untuk komunitas mahasiswa SLINF26.
 - Karakter & Persona: Ramah, asyik, santai ala mahasiswa namun tetap sopan, cerdas, solutif, dan punya empati terhadap kesibukan / sambatan kuliah.
 - Jika pengguna menyapa "Halo Alters", bertanya "kamu siapa?", "siapa namamu?", atau menyebut namamu, perkenalkan dirimu sebagai ALTERS dengan ramah, hangat, dan percaya diri.
+
+DATA MAHASISWA AKTIF DI CLOUD SUPABASE (Tabel public.mahasiswa):
+- Total Mahasiswa Terdaftar: ${mahasiswaList.length} orang
+- Data Mahasiswa (JSON): ${mahasiswaSummary}
 
 GAYA RESPONS:
 - Gunakan bahasa Indonesia yang santai, akrab, jelas, dan solutif (gaya mahasiswa/kampus).
@@ -329,6 +345,14 @@ Parameter:
 - Lihat daftar target terdaftar (contoh: "cek target siaran", "target apa aja"):
   [[ACTION:GET_TARGETS:{}]]
 
+9. Pengelolaan Data Mahasiswa (Tabel public.mahasiswa di Supabase):
+- Cek / Tampilkan Data Mahasiswa (contoh: "cek data mahasiswa", "siapa aja mahasiswa yang terdaftar?", "lihat data mhs", "cari mahasiswa budi"):
+  [[ACTION:GET_MAHASISWA:{"query":""}]] (isi "query" jika pengguna mencari nama atau NIM spesifik)
+- Tambah Mahasiswa Baru (contoh: "tambahkan mahasiswa Budi Santoso NIM 22051204001", "catat mhs baru Siti Aminah 22051204002"):
+  [[ACTION:ADD_MAHASISWA:{"nama":"Budi Santoso","nim":"22051204001"}]]
+- Hapus Mahasiswa (contoh: "hapus mahasiswa 22051204001", "hapus mhs budi"):
+  [[ACTION:DEL_MAHASISWA:{"target":"22051204001"}]]
+
 🎯 CONTOH NYATA PENANGANAN PERMINTAAN ABSTRAK & MULTI-KATA (FEW-SHOT):
 • Permintaan: "targetin grup ini dong" atau "tolong nargetin chat ini ya"
   Tindakan: Daftarkan obrolan saat ini sebagai target siaran. JANGAN kirim broadcast!
@@ -469,7 +493,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payloadStr,
-        signal: AbortSignal.timeout(7500)
+        signal: AbortSignal.timeout(12000)
       });
 
       if (res.status === 200) {
@@ -487,6 +511,11 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
           const urlMatch = (userQuestion || '').match(/https?:\/\/[^\s]+/i);
           const tgt = urlMatch ? urlMatch[0] : 'sini';
           actionMatches = [[`[[ACTION:ADD_TARGET:{"target":"${tgt}"}]]`, 'ADD_TARGET', JSON.stringify({ target: tgt })]];
+        }
+
+        // Safeguard pemicu cek mahasiswa otomatis jika AI hanya membalas teks
+        if (actionMatches.length === 0 && (qLowerPre.includes('mahasiswa') || qLowerPre.includes('mhs')) && (qLowerPre.includes('cek') || qLowerPre.includes('lihat') || qLowerPre.includes('daftar') || qLowerPre.includes('data') || qLowerPre.includes('siapa'))) {
+          actionMatches = [[`[[ACTION:GET_MAHASISWA:{}]]`, 'GET_MAHASISWA', '{}']];
         }
 
         if (actionMatches.length > 0) {
@@ -516,6 +545,12 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
               actionData.target = urlMatch ? urlMatch[0] : (actionData.target || 'sini');
             }
 
+            // 🛡️ Safeguard cerdas untuk mahasiswa intent
+            const isMhsCheckIntent = (qLower.includes('mahasiswa') || qLower.includes('mhs')) && (qLower.includes('cek') || qLower.includes('lihat') || qLower.includes('daftar') || qLower.includes('data') || qLower.includes('siapa') || qLower.includes('cari'));
+            if (isMhsCheckIntent && actionType !== 'GET_MAHASISWA' && actionType !== 'ADD_MAHASISWA' && actionType !== 'DEL_MAHASISWA') {
+              actionType = 'GET_MAHASISWA';
+            }
+
             // 🛡️ Safeguard cerdas untuk query gabungan / polling intent
             const isPollIntent = qLower.includes('poll') || qLower.includes('polling') || qLower.includes('kehadiran dosen') || qLower.includes('presensi');
             if (actionType === 'SEND_BROADCAST' && isPollIntent) {
@@ -530,7 +565,7 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
               }
             }
 
-            const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST', 'ADD_TARGET', 'DEL_TARGET'];
+            const ownerOnlyActions = ['BATCH_SCHEDULE', 'ADD_SCHEDULE', 'DELETE_SCHEDULE', 'SET_AUTOSEND', 'DELETE_TASK', 'SEND_BROADCAST', 'ADD_TARGET', 'DEL_TARGET', 'ADD_MAHASISWA', 'DEL_MAHASISWA'];
             if (ownerOnlyActions.includes(actionType) && !isSenderOwner) {
               feedbacks.push(`⚠️ _Catatan: Aksi ${actionType} memerlukan izin khusus Admin / Owner bot._`);
               continue;
@@ -937,6 +972,39 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                     listTxt += `${i + 1}. ${typeLabel} - \`${t}\`\n`;
                   }
                   feedbacks.push(listTxt.trim());
+                }
+              } else if (actionType === 'GET_MAHASISWA') {
+                const q = (actionData.query || '').trim();
+                let list = [];
+                if (q) {
+                  list = await mahasiswaManager.searchMahasiswa(q);
+                } else {
+                  list = await mahasiswaManager.getMahasiswaList();
+                }
+                if (list.length === 0) {
+                  feedbacks.push(q ? `🔍 Mahasiswa dengan kata kunci *"${q}"* tidak ditemukan di database Supabase.` : `📋 *[Data Mahasiswa]*\nBelum ada data mahasiswa yang terdaftar di database Supabase.\n\n_Untuk menambahkan, ketik:_\n*!tambahmhs <nama> | <nim>*`);
+                } else {
+                  let textList = `🎓 *[Data Mahasiswa Terdaftar di Supabase]* (${list.length} orang):\n\n`;
+                  list.forEach((m, i) => {
+                    textList += `${i + 1}. *${m.nama}* – NIM: \`${m.nim}\` (ID: ${m.id})\n`;
+                  });
+                  feedbacks.push(textList.trim());
+                }
+              } else if (actionType === 'ADD_MAHASISWA') {
+                const resMhs = await mahasiswaManager.addMahasiswa(actionData.nama, actionData.nim);
+                if (resMhs.success) {
+                  const m = resMhs.mahasiswa || {};
+                  feedbacks.push(`✅ *[Mahasiswa Berhasil Didaftarkan]*\n• Nama: *${actionData.nama}*\n• NIM: \`${actionData.nim}\`\n• ID: \`${m.id || '-'}\`\nTersimpan permanen di cloud database Supabase! 🎓`);
+                } else {
+                  feedbacks.push(`⚠️ Gagal mendaftarkan mahasiswa: ${resMhs.message}`);
+                }
+              } else if (actionType === 'DEL_MAHASISWA') {
+                const target = actionData.target || actionData.nim || actionData.id;
+                const resDelM = await mahasiswaManager.deleteMahasiswa(target);
+                if (resDelM.success) {
+                  feedbacks.push(`🗑️ *[Mahasiswa Dihapus]* Data mahasiswa (\`${target}\`) telah dihapus dari database Supabase.`);
+                } else {
+                  feedbacks.push(`⚠️ Gagal menghapus mahasiswa: ${resDelM.message}`);
                 }
               }
             } catch (eAction) {

@@ -310,6 +310,18 @@ const {
   stopScheduler
 } = require('./scheduler');
 
+let mahasiswaManager = {
+  getMahasiswaList: async () => [],
+  addMahasiswa: async () => ({ success: false }),
+  deleteMahasiswa: async () => ({ success: false }),
+  searchMahasiswa: async () => []
+};
+try {
+  mahasiswaManager = require('./utils/mahasiswaManager');
+} catch (e) {
+  console.warn('⚠️ [mahasiswaManager Info]: Modul utils/mahasiswaManager.js bermasalah:', e.message);
+}
+
 // Folder penyimpanan sesi login WhatsApp
 const AUTH_DIR = path.join(__dirname, 'session_auth');
 
@@ -890,17 +902,37 @@ async function handleIncomingMessage(msg) {
   const botNumber = sock.user ? sock.user.id.split(':')[0] : '';
   const botJid = botNumber ? `${botNumber}@s.whatsapp.net` : '';
   const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+  const quotedMsg = contextInfo?.quotedMessage;
+  const quotedText = (
+    quotedMsg?.conversation ||
+    quotedMsg?.extendedTextMessage?.text ||
+    quotedMsg?.imageMessage?.caption ||
+    quotedMsg?.videoMessage?.caption ||
+    quotedMsg?.documentMessage?.caption ||
+    ''
+  ).trim();
+
   const mentionedJids = contextInfo?.mentionedJid || [];
   const quotedParticipant = contextInfo?.participant ? contextInfo.participant.split(':')[0] : '';
-  const isBotQuoted = Boolean(quotedParticipant && botNumber && quotedParticipant.includes(botNumber));
+  const isBotQuoted = Boolean(quotedParticipant && botNumber && quotedParticipant.includes(botNumber)) || (isPrivateChat && Boolean(quotedMsg));
   const isBotMentioned = (botJid && mentionedJids.includes(botJid)) || (botNumber && trimmedText.includes(`@${botNumber}`)) || isBotQuoted;
 
   if (isBotMentioned) {
     // Bersihkan mention (@botNumber) dari teks agar bisa diparse sebagai perintah
-    const textAfterMention = trimmedText
+    let textAfterMention = trimmedText
       .replace(new RegExp(`@${botNumber}`, 'g'), '')
       .replace(/^[!\/.]\s*/, '')  // hapus prefix jika ada
       .trim();
+
+    // ⚡ Fitur Quick-Reply Angka 1-5 jika membalas menu bot
+    if (/^[1-5]$/.test(textAfterMention) && quotedText.toLowerCase().includes('menu')) {
+      const numChoice = textAfterMention.trim();
+      if (numChoice === '1') textAfterMention = 'today';
+      else if (numChoice === '2') textAfterMention = 'tugas';
+      else if (numChoice === '3') textAfterMention = 'mahasiswa';
+      else if (numChoice === '4') textAfterMention = 'all';
+      else if (numChoice === '5') textAfterMention = 'status';
+    }
 
     // Perintah yang bisa dipicu via @mention di grup
     const mentionTriggerCommands = [
@@ -911,6 +943,8 @@ async function handleIncomingMessage(msg) {
       'send', 'kirim', 'bc', 'broadcast',
       'jadwal', 'jadwala', 'jadwalb', 'jadwali',
       'today', 'hariini', 'tugas', 'task',
+      'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs',
+      'pilihan', 'tombol', 'menuinteraktif',
       'listdosen', 'menu', 'help', 'ai', 'tanya',
       'id', 'scanjadwal', 'scan', 'reset', 'ingat',
       'reminder', 'ingatkan', 'pengingat',
@@ -967,9 +1001,12 @@ async function handleIncomingMessage(msg) {
       return;
     }
 
-    // Bukan perintah → serahkan ke AI seperti biasa
+    // Bukan perintah → serahkan ke AI dengan membawa konteks pesan yang dikutip jika ada
     const mediaFile = await extractMediaFromMessage(msg, sock);
-    const promptToAsk = textAfterMention || (mediaFile ? 'Tolong analisis dan simpulkan isi dokumen/foto ini secara lengkap dan terstruktur.' : 'Halo bot!');
+    let promptToAsk = textAfterMention || (mediaFile ? 'Tolong analisis dan simpulkan isi dokumen/foto ini secara lengkap dan terstruktur.' : 'Halo bot!');
+    if (quotedText) {
+      promptToAsk = `[Konteks Pesan Bot Yang Dibalas: "${quotedText.slice(0, 500)}"]\nUser: ${promptToAsk}`;
+    }
     console.log(`🤖 [AI Mention] Ditanyakan oleh ${sender}: "${promptToAsk}"${mediaFile ? ` [Lampiran: ${mediaFile.mimeType}]` : ''}`);
     await react('🤔');
     try {
@@ -1016,7 +1053,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
+  const commonCommands = ['alters', 'about', 'menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'send', 'kirim', 'bc', 'broadcast', 'today', 'hariini', 'status', 'targets', 'addtarget', 'addlink', 'add', 'deltarget', 'mahasiswa', 'mhs', 'datamahasiswa', 'tambahmhs', 'addmhs', 'hapusmhs', 'delmhs', 'pilihan', 'tombol', 'menuinteraktif', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear', 'reminder', 'reminders', 'delreminder', 'ingatkan', 'pengingat'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -2340,6 +2377,88 @@ ${messageBody}
       config.targetJids = targets.filter(j => j !== targetToRemove);
       saveConfig(config);
       await reply(`✅ Berhasil menghapus target:\n\`${targetToRemove}\`\n\nTotal sisa target: ${config.targetJids.length}`);
+      break;
+    }
+
+    case 'mahasiswa':
+    case 'mhs':
+    case 'datamahasiswa': {
+      const q = query.trim();
+      let list = [];
+      if (q) {
+        list = await mahasiswaManager.searchMahasiswa(q);
+      } else {
+        list = await mahasiswaManager.getMahasiswaList();
+      }
+
+      if (list.length === 0) {
+        await reply(q
+          ? `🔍 Mahasiswa dengan kata kunci *"${q}"* tidak ditemukan di database Supabase.`
+          : `📋 *[Data Mahasiswa]*\nBelum ada data mahasiswa yang terdaftar di database Supabase.\n\n_Untuk menambahkan, ketik:_\n*${prefix}tambahmhs <nama> | <nim>*`
+        );
+        return;
+      }
+
+      let mhsListStr = `╭───「 🎓 *DATA MAHASISWA SLINF26 (${list.length})* 」\n╰──────────────────────────\n\n`;
+      list.forEach((m, idx) => {
+        mhsListStr += `▫️ *[${idx + 1}]* *${m.nama}*\n   NIM: \`${m.nim}\` (ID: ${m.id})\n\n`;
+      });
+      mhsListStr += `💡 _Untuk cari: *${prefix}mahasiswa <nama/nim>*_\n💡 _Untuk tambah: *${prefix}tambahmhs <nama> | <nim>*_\n💡 _Untuk hapus: *${prefix}hapusmhs <nim/id>*_`;
+      await reply(mhsListStr.trim());
+      break;
+    }
+
+    case 'tambahmhs':
+    case 'addmhs': {
+      if (!query.includes('|')) {
+        await reply(`❌ Format salah. Gunakan tanda *|* pemisah nama dan NIM.\n\nContoh:\n*${prefix}tambahmhs Budi Santoso | 22051204001*`);
+        return;
+      }
+      const [mName, mNim] = query.split('|').map(s => s.trim());
+      if (!mName || !mNim) {
+        await reply(`❌ Nama dan NIM wajib diisi.\nContoh: *${prefix}tambahmhs Siti Aminah | 22051204002*`);
+        return;
+      }
+      const addRes = await mahasiswaManager.addMahasiswa(mName, mNim);
+      if (addRes.success) {
+        await reply(`✅ *[Mahasiswa Berhasil Ditambahkan]*\n\n• Nama: *${mName}*\n• NIM: \`${mNim}\`\n• Database: 🟢 Supabase Cloud PostgreSQL\n\nKetik *${prefix}mahasiswa* untuk melihat daftar.`);
+      } else {
+        await reply(`⚠️ Gagal menambahkan: ${addRes.message}`);
+      }
+      break;
+    }
+
+    case 'hapusmhs':
+    case 'delmhs': {
+      if (!query) {
+        await reply(`❌ Masukkan NIM atau ID mahasiswa yang ingin dihapus.\nContoh: *${prefix}hapusmhs 22051204001*`);
+        return;
+      }
+      const delRes = await mahasiswaManager.deleteMahasiswa(query.trim());
+      if (delRes.success) {
+        await reply(`🗑️ Data mahasiswa (\`${query.trim()}\`) berhasil dihapus dari database Supabase.`);
+      } else {
+        await reply(`⚠️ Gagal menghapus: ${delRes.message}`);
+      }
+      break;
+    }
+
+    case 'pilihan':
+    case 'tombol':
+    case 'menuinteraktif': {
+      await sendNativePoll(
+        sock,
+        remoteJid,
+        '🤖 Menu Cepat Alters Bot - Pilih Layanan:',
+        [
+          '📅 Jadwal Hari Ini',
+          '📝 Tugas & Deadline',
+          '🎓 Data Mahasiswa',
+          '📊 Polling Kehadiran Dosen',
+          'ℹ️ Status Server'
+        ],
+        1
+      );
       break;
     }
 
