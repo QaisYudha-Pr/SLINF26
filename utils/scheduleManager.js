@@ -393,6 +393,46 @@ async function saveBatchSchedule(classKey, weekScheduleObj) {
   return { success: true, cKey, days: Object.keys(weekScheduleObj) };
 }
 
+/**
+ * Memperbarui properti spesifik jadwal (jam, ruang, dosen, atau status batal)
+ */
+async function updateScheduleProperty(classKey, dayKey, matkulQuery, updates = {}) {
+  const schedules = getSchedules();
+  const cKey = (classKey || 'A').toUpperCase();
+  const dKey = (dayKey || 'senin').toLowerCase();
+
+  if (!schedules[cKey] || !schedules[cKey][dKey]) {
+    return { success: false, message: `Jadwal Kelas ${cKey} hari ${dKey} belum tersedia.` };
+  }
+
+  const queryLower = (matkulQuery || '').trim().toLowerCase();
+  const targetIdx = schedules[cKey][dKey].findIndex(
+    s => (s.matkul || '').toLowerCase().includes(queryLower)
+  );
+
+  if (targetIdx < 0) {
+    return { success: false, message: `Mata kuliah yang cocok dengan "${matkulQuery}" tidak ditemukan pada hari ${dKey} (Kelas ${cKey}).` };
+  }
+
+  const item = { ...schedules[cKey][dKey][targetIdx] };
+  if (updates.jam) item.jam = updates.jam;
+  if (updates.ruang) item.ruang = updates.ruang;
+  if (updates.dosen) item.dosen = updates.dosen;
+  if (updates.isCancelled) {
+    item.ruang = '❌ KOSONG / BATAL';
+    if (!item.jam.includes('BATAL')) {
+      item.jam = `${item.jam} (BATAL)`;
+    }
+  }
+
+  schedules[cKey][dKey][targetIdx] = item;
+  saveSchedules(schedules);
+
+  await syncScheduleToSupabase(cKey, dKey, item);
+
+  return { success: true, item, cKey, dKey };
+}
+
 module.exports = {
   getSchedules,
   saveSchedules,
@@ -400,6 +440,7 @@ module.exports = {
   scanScheduleWithGemini,
   addScheduleItem,
   deleteScheduleItem,
-  saveBatchSchedule
+  saveBatchSchedule,
+  updateScheduleProperty
 };
 

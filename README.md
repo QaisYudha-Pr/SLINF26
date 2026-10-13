@@ -111,6 +111,15 @@ Scan kode QR yang muncul di terminal menggunakan menu **Perangkat Tertaut (Linke
 | `!tugas` | Cek daftar tugas dan deadline aktif |
 | `!scanjadwal` (kirim foto) | Ekstrak jadwal dari foto/dokumen |
 
+### 👑 Pengaturan Cepat Jadwal & Pembaruan (Admin)
+| Perintah | Deskripsi |
+| :--- | :--- |
+| `!gantijam <matkul> \| <jam>` | Ubah jam perkuliahan & langsung tampilkan kartu jadwal baru |
+| `!gantiruang <matkul> \| <ruang>` | Pindah ruangan perkuliahan & auto preview jadwal |
+| `!batal <matkul>` / `!kosong` | Tandai mata kuliah batal/kosong hari ini |
+| `!checkupdate` | Cek commit pembaruan dari GitHub tanpa me-restart bot |
+| `!update` | Unduh pembaruan lengkap dari GitHub & auto-restart |
+
 ### ⚙️ Sistem & Target Saluran
 | Perintah | Deskripsi |
 | :--- | :--- |

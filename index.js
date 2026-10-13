@@ -226,7 +226,8 @@ const {
 const {
   formatSchedule,
   scanScheduleWithGemini,
-  getSchedules
+  getSchedules,
+  updateScheduleProperty
 } = require('./utils/scheduleManager');
 let taskManager = {
   formatTaskList: async () => '⚠️ Fitur taskManager sedang disinkronkan. Ketik /update untuk memperbarui.',
@@ -746,10 +747,12 @@ async function handleIncomingMessage(msg) {
     const mentionTriggerCommands = [
       'all', 'pollall', 'poll', 'polling', 'dosen', 'polldosen',
       'tagall', 'hidetag', 'semua',
+      'gantijam', 'gantiruang', 'batal', 'kosong', 'libur',
       'jadwal', 'jadwala', 'jadwalb', 'jadwali',
       'today', 'hariini', 'tugas', 'task',
       'listdosen', 'menu', 'help', 'ai', 'tanya',
-      'status', 'id', 'scanjadwal', 'scan', 'reset', 'ingat'
+      'status', 'id', 'scanjadwal', 'scan', 'reset', 'ingat',
+      'checkupdate', 'cekupdate'
     ];
 
     const firstWord = (textAfterMention.split(/\s+/)[0] || '').toLowerCase();
@@ -851,7 +854,7 @@ async function handleIncomingMessage(msg) {
   }
 
   // Daftar perintah umum yang bisa diketik langsung
-  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'tugas', 'task', 'reset', 'clear'];
+  const commonCommands = ['menu', 'help', 'all', 'pollall', 'poll', 'polling', 'dosen', 'tagall', 'hidetag', 'semua', 'gantijam', 'gantiruang', 'batal', 'kosong', 'libur', 'today', 'hariini', 'status', 'targets', 'listdosen', 'jadwal', 'scanjadwal', 'scan', 'ai', 'tanya', 'jadwala', 'jadwalb', 'jadwali', 'restart', 'update', 'checkupdate', 'cekupdate', 'tugas', 'task', 'reset', 'clear'];
   let cleanCommandText = '';
 
   if (usedPrefix !== null) {
@@ -1063,6 +1066,9 @@ Bisa langsung chat santai tanpa mengetik tanda prefiks!`;
 
         if (userIsOwner) {
           fullMenuText += `\n\n👑 *KONTROL OWNER / ADMIN*
+• *${prefix}gantijam <matkul> | <jam>* ➔ Ubah jam kuliah & auto preview
+• *${prefix}gantiruang <matkul> | <ruang>* ➔ Pindah ruangan kuliah
+• *${prefix}batal <matkul>* / *${prefix}kosong* ➔ Tandai kuliah batal
 • *${prefix}send [hari]* ➔ Kirim broadcast sekarang
 • *${prefix}targets* ➔ Daftar grup target siaran
 • *${prefix}addlink <link>* / *${prefix}addtarget <id>*
@@ -1070,6 +1076,7 @@ Bisa langsung chat santai tanpa mengetik tanda prefiks!`;
 • *${prefix}autosend <on/off>* ➔ Saklar siaran (07:00)
 • *${prefix}setdosen <d1, d2>* ➔ Set dosen default
 • *${prefix}listowner* / *${prefix}tambahkan <no>* / *${prefix}hapusnomor <no>*
+• *${prefix}checkupdate* ➔ Cek pembaruan baru dari GitHub
 • *${prefix}update* ➔ Update dari GitHub
 • *${prefix}repair* ➔ Self-heal file & DB
 • *${prefix}restart* ➔ Restart proses bot`;
@@ -2012,6 +2019,245 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
       break;
     }
 
+    case 'gantijam':
+    case 'ubahjam': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+
+      if (!query) {
+        await reply(`❌ Format salah. Gunakan:\n*${prefix}gantijam <matkul> | <jam_baru> [hari] [kelas]*\n\n*Contoh:*\n• *${prefix}gantijam Basdat | 10.00 - 11.40*\n• *${prefix}gantijam DFA | 08.00 - 09.40 senin b*`);
+        return;
+      }
+
+      const dt = getIndonesianDateTime() || {};
+      let targetDay = dt.dayKey || 'senin';
+      let targetClass = 'A';
+      let rawQuery = query;
+
+      const dayList = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu'];
+      const qWords = rawQuery.split(/\s+/);
+      const lastWord = (qWords[qWords.length - 1] || '').toLowerCase();
+      const prevWord = (qWords[qWords.length - 2] || '').toLowerCase();
+
+      if (['a', 'b', 'i'].includes(lastWord)) {
+        targetClass = lastWord.toUpperCase();
+        rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 1])).trim();
+        if (dayList.includes(prevWord)) {
+          targetDay = prevWord;
+          rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 2])).trim();
+        }
+      } else if (dayList.includes(lastWord)) {
+        targetDay = lastWord;
+        rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 1])).trim();
+      }
+
+      let matkul = '';
+      let jamBaru = '';
+
+      if (rawQuery.includes('|')) {
+        const parts = rawQuery.split('|').map(s => s.trim());
+        matkul = parts[0];
+        jamBaru = parts.slice(1).join('|').trim();
+      } else {
+        const matchTime = rawQuery.match(/\d{1,2}[:.]\d{2}/);
+        if (matchTime) {
+          const idx = rawQuery.indexOf(matchTime[0]);
+          matkul = rawQuery.slice(0, idx).trim();
+          jamBaru = rawQuery.slice(idx).trim();
+        } else {
+          matkul = rawQuery;
+          jamBaru = '-';
+        }
+      }
+
+      if (!matkul || !jamBaru || jamBaru === '-') {
+        await reply(`❌ Tolong sebutkan nama mata kuliah dan jam barunya.\nContoh: *${prefix}gantijam Basdat | 10.00 - 11.40*`);
+        return;
+      }
+
+      try {
+        const res = await updateScheduleProperty(targetClass, targetDay, matkul, { jam: jamBaru });
+        if (!res.success) {
+          await reply(`⚠️ ${res.message}`);
+          return;
+        }
+
+        await react('✅');
+        const preview = formatSchedule(res.cKey, res.dKey);
+        await reply(`✅ *[JAM KULIAH BERHASIL DIPERBARUI]*\n📌 *Mata Kuliah:* ${res.item.matkul}\n⏰ *Jam Baru:* ${res.item.jam}\n📍 *Ruangan:* ${res.item.ruang} (Kelas ${res.cKey})\n\n${preview}\n\n📢 _Mau langsung siarkan ke Saluran / Grup? Balas *!send*!_`);
+      } catch (err) {
+        await reply(`❌ Gagal mengubah jam kuliah: ${err.message}`);
+      }
+      break;
+    }
+
+    case 'gantiruang':
+    case 'ubahruang':
+    case 'pindahruang': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+
+      if (!query) {
+        await reply(`❌ Format salah. Gunakan:\n*${prefix}gantiruang <matkul> | <ruang_baru> [hari] [kelas]*\n\n*Contoh:*\n• *${prefix}gantiruang Basdat | Lab RPL*\n• *${prefix}gantiruang DFA ke Lab 3*`);
+        return;
+      }
+
+      const dt = getIndonesianDateTime() || {};
+      let targetDay = dt.dayKey || 'senin';
+      let targetClass = 'A';
+      let rawQuery = query;
+
+      const dayList = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu'];
+      const qWords = rawQuery.split(/\s+/);
+      const lastWord = (qWords[qWords.length - 1] || '').toLowerCase();
+      const prevWord = (qWords[qWords.length - 2] || '').toLowerCase();
+
+      if (['a', 'b', 'i'].includes(lastWord)) {
+        targetClass = lastWord.toUpperCase();
+        rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 1])).trim();
+        if (dayList.includes(prevWord)) {
+          targetDay = prevWord;
+          rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 2])).trim();
+        }
+      } else if (dayList.includes(lastWord)) {
+        targetDay = lastWord;
+        rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 1])).trim();
+      }
+
+      let matkul = '';
+      let ruangBaru = '';
+
+      if (rawQuery.includes('|')) {
+        const parts = rawQuery.split('|').map(s => s.trim());
+        matkul = parts[0];
+        ruangBaru = parts.slice(1).join('|').trim();
+      } else if (/\bke\b/i.test(rawQuery)) {
+        const parts = rawQuery.split(/\bke\b/i).map(s => s.trim());
+        matkul = parts[0];
+        ruangBaru = parts[1] || '';
+      } else {
+        const parts = rawQuery.split(/\s+/);
+        if (parts.length >= 2) {
+          matkul = parts[0];
+          ruangBaru = parts.slice(1).join(' ');
+        }
+      }
+
+      if (!matkul || !ruangBaru) {
+        await reply(`❌ Tolong sebutkan mata kuliah dan ruangan barunya.\nContoh: *${prefix}gantiruang Basdat | Lab 3*`);
+        return;
+      }
+
+      try {
+        const res = await updateScheduleProperty(targetClass, targetDay, matkul, { ruang: ruangBaru });
+        if (!res.success) {
+          await reply(`⚠️ ${res.message}`);
+          return;
+        }
+
+        await react('✅');
+        const preview = formatSchedule(res.cKey, res.dKey);
+        await reply(`✅ *[RUANGAN KULIAH BERHASIL DIPERBARUI]*\n📌 *Mata Kuliah:* ${res.item.matkul}\n📍 *Ruangan Baru:* ${res.item.ruang}\n⏰ *Jam:* ${res.item.jam} (Kelas ${res.cKey})\n\n${preview}\n\n📢 _Mau langsung siarkan ke Saluran / Grup? Balas *!send*!_`);
+      } catch (err) {
+        await reply(`❌ Gagal mengubah ruangan: ${err.message}`);
+      }
+      break;
+    }
+
+    case 'batal':
+    case 'kosong':
+    case 'libur': {
+      if (!userIsOwner) {
+        await reply('⛔ Perintah ini hanya dapat diakses oleh Admin / Pemilik bot.');
+        return;
+      }
+
+      if (!query) {
+        await reply(`❌ Format salah. Sebutkan nama mata kuliah yang kosong/batal.\nContoh: *${prefix}batal Basdat* atau *${prefix}kosong Bu Woro*`);
+        return;
+      }
+
+      const dt = getIndonesianDateTime() || {};
+      let targetDay = dt.dayKey || 'senin';
+      let targetClass = 'A';
+      let rawQuery = query;
+
+      const dayList = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu'];
+      const qWords = rawQuery.split(/\s+/);
+      const lastWord = (qWords[qWords.length - 1] || '').toLowerCase();
+      const prevWord = (qWords[qWords.length - 2] || '').toLowerCase();
+
+      if (['a', 'b', 'i'].includes(lastWord)) {
+        targetClass = lastWord.toUpperCase();
+        rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 1])).trim();
+        if (dayList.includes(prevWord)) {
+          targetDay = prevWord;
+          rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 2])).trim();
+        }
+      } else if (dayList.includes(lastWord)) {
+        targetDay = lastWord;
+        rawQuery = rawQuery.slice(0, rawQuery.lastIndexOf(qWords[qWords.length - 1])).trim();
+      }
+
+      try {
+        const res = await updateScheduleProperty(targetClass, targetDay, rawQuery, { isCancelled: true });
+        if (!res.success) {
+          await reply(`⚠️ ${res.message}`);
+          return;
+        }
+
+        await react('🛑');
+        const preview = formatSchedule(res.cKey, res.dKey);
+        await reply(`🛑 *[KULIAH DITANDAI BATAL / KOSONG]*\n📌 *Mata Kuliah:* ${res.item.matkul}\n📍 *Status:* ❌ KOSONG / BATAL (Kelas ${res.cKey} hari ${res.dKey})\n\n${preview}\n\n📢 _Mau langsung siarkan pengumuman ini ke Saluran / Grup? Balas *!send*!_`);
+      } catch (err) {
+        await reply(`❌ Gagal menandai kuliah batal: ${err.message}`);
+      }
+      break;
+    }
+
+    case 'checkupdate':
+    case 'cekupdate': {
+      await react('🔍');
+      try {
+        const commitRes = await fetch('https://api.github.com/repos/QaisYudha-Pr/SLINF26/commits?per_page=3', {
+          headers: { 'User-Agent': 'WhatsApp-Bot' },
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (!commitRes.ok) {
+          await reply(`⚠️ Gagal menghubungi GitHub API (HTTP ${commitRes.status}). Silakan coba sesaat lagi.`);
+          return;
+        }
+
+        const commits = await commitRes.json();
+        if (!Array.isArray(commits) || commits.length === 0) {
+          await reply('ℹ️ Tidak ada data commit yang ditemukan di repositori.');
+          return;
+        }
+
+        let updateText = `🔍 *[STATUS PEMBARUAN GITHUB REPOSITORY]*\n`;
+        updateText += `📦 *Repositori:* github.com/QaisYudha-Pr/SLINF26\n\n`;
+        updateText += `📌 *Daftar Pembaruan Terbaru:*\n`;
+
+        commits.forEach((c, i) => {
+          const sha = (c.sha || '').slice(0, 7);
+          const msg = (c.commit?.message || '-').split('\n')[0];
+          const dateStr = c.commit?.author?.date ? new Date(c.commit.author.date).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '-';
+          updateText += `${i + 1}. \`${sha}\` ➔ *${msg}*\n   📅 _${dateStr} WIB_\n`;
+        });
+
+        updateText += `\n💡 _Untuk mengunduh dan menerapkan pembaruan ke bot ini secara instan, ketik:_ \n👉 *${prefix}update*`;
+        await reply(updateText);
+      } catch (eCek) {
+        await reply(`❌ Gagal memeriksa update: ${eCek.message}`);
+      }
+      break;
+    }
+
     case 'update': {
       if (!userIsOwner) {
         await reply('⛔ Perintah ini hanya dapat diakses oleh Pemilik (Owner) bot.');
@@ -2027,10 +2273,13 @@ Prefiks: *${prefix}* atau */* (Ketik *${prefix}menu* untuk melihat fitur)`;
         'runner.js',
         'scheduler.js',
         'configManager.js',
+        'package.json',
         'utils/aiAssistant.js',
         'utils/scheduleManager.js',
         'utils/formatter.js',
-        'utils/taskManager.js'
+        'utils/taskManager.js',
+        'utils/pollUtils.js',
+        'utils/memoryManager.js'
       ];
 
       try {

@@ -1,5 +1,5 @@
 const { getIndonesianDateTime } = require('./formatter');
-const { getSchedules, addScheduleItem, deleteScheduleItem, saveBatchSchedule } = require('./scheduleManager');
+const { getSchedules, addScheduleItem, deleteScheduleItem, saveBatchSchedule, formatSchedule } = require('./scheduleManager');
 let taskManager = {
   getTasks: async () => [],
   addTask: async () => ({ success: false, task: {} }),
@@ -341,7 +341,8 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
             const actionData = JSON.parse(actionPayloadStr);
             if (actionType === 'BATCH_SCHEDULE') {
               const resBatch = await saveBatchSchedule(actionData.kelas, actionData.jadwal);
-              return `${cleanReply}\n\n💾 *[Supabase & Lokal Berhasil]* Seluruh jadwal mingguan *Kelas ${resBatch.cKey}* telah otomatis disimpan ke Supabase Cloud Database! (Ketik *!jadwal ${resBatch.cKey.toLowerCase()}* untuk melihat).`;
+              const preview = formatSchedule(resBatch.cKey);
+              return `${cleanReply}\n\n💾 *[Jadwal Mingguan Berhasil Disimpan]*\nSeluruh jadwal Kelas ${resBatch.cKey} telah disinkronkan ke Supabase Cloud Database!\n\n${preview}\n\n📢 _Mau langsung disiarkan ke Saluran / Grup? Balas *!send* atau ketik "kirim jadwal"!_`;
             } else if (actionType === 'ADD_SCHEDULE') {
               const resAdd = await addScheduleItem(actionData.kelas, actionData.hari, {
                 jam: actionData.jam || '-',
@@ -349,11 +350,13 @@ Pastikan nama hari ditulis huruf kecil (senin, selasa, rabu, kamis, jumat, sabtu
                 dosen: actionData.dosen || '-',
                 ruang: actionData.ruang || '-'
               });
-              const actionVerb = resAdd.isUpdated ? 'diperbarui' : 'tersimpan';
-              return `${cleanReply}\n\n💾 *[Supabase & Database Terupdate]* Data mata kuliah *${actionData.matkul}* telah *${actionVerb}* di Supabase Cloud (Kelas ${resAdd.cKey} hari ${resAdd.dKey})! (Ketik *!jadwal ${resAdd.cKey.toLowerCase()}* untuk melihat).`;
+              const actionVerb = resAdd.isUpdated ? 'Diperbarui' : 'Ditambahkan';
+              const preview = formatSchedule(resAdd.cKey, resAdd.dKey);
+              return `${cleanReply}\n\n✅ *[Jadwal Berhasil ${actionVerb}]*\n📌 Mata Kuliah: *${actionData.matkul}* (Kelas ${resAdd.cKey})\n\n${preview}\n\n📢 _Mau langsung disiarkan ke Saluran / Grup? Balas *!send* atau ketik "kirim jadwal"!_`;
             } else if (actionType === 'DELETE_SCHEDULE') {
               const resDel = await deleteScheduleItem(actionData.kelas, actionData.hari, actionData.matkul);
-              return `${cleanReply}\n\n🗑️ *[Database Terupdate]* Mata kuliah *${actionData.matkul}* telah dihapus dari Supabase & jadwal lokal Kelas ${resDel.cKey} hari ${resDel.dKey}.`;
+              const preview = formatSchedule(resDel.cKey, resDel.dKey);
+              return `${cleanReply}\n\n🗑️ *[Mata Kuliah Dihapus]*\n📌 Mata Kuliah: *${actionData.matkul}* (Kelas ${resDel.cKey} hari ${resDel.dKey})\n\n${preview}\n\n📢 _Mau siarkan perubahan ini ke Saluran / Grup? Balas *!send*!_`;
             } else if (actionType === 'SET_AUTOSEND') {
               const cfg = loadConfig();
               if (!cfg.autoSend) cfg.autoSend = { timezone: 'Asia/Jakarta' };
