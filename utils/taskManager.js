@@ -37,16 +37,13 @@ function saveLocalTasks(tasks) {
  */
 async function fetchSupabase(endpoint, options = {}) {
   const config = loadConfig();
-  let sb = config.supabase;
+  const sb = config.supabase || (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY ? {
+    url: process.env.SUPABASE_URL,
+    anonKey: process.env.SUPABASE_ANON_KEY
+  } : null);
+
   if (!sb || !sb.url || !sb.anonKey) {
-    sb = {
-      url: 'https://kopdtjpjlhncngzrtflz.supabase.co',
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvcGR0anBqbGhuY25nenJ0Zmx6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3NDg5NjcsImV4cCI6MjEwNzMyNDk2N30.trrAhx23Sa6arVZ_nquUB0jYNXcUxumvxckVyw8WAGI'
-    };
-    try {
-      config.supabase = sb;
-      saveConfig(config);
-    } catch (e) {}
+    return null;
   }
 
   const url = `${sb.url}/rest/v1/${endpoint}`;

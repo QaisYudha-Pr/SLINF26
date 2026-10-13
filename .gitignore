@@ -10,3 +10,4 @@ backup/
 tasks.json
 memory_sessions.json
 memory_facts.json
+custom_reminders.json
